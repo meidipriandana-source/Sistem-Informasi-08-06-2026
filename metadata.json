@@ -1,0 +1,6 @@
+{
+  "name": "SIPANDA",
+  "description": "Sistem Pengelolaan Anggaran dan Dokumen (SIPANDA). Dashboard manajemen dokumen, sertifikat, laporan kegiatan, rincian anggaran APBD dan BLUD.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
