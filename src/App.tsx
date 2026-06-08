@@ -143,6 +143,7 @@ export default function App() {
   const [bulkEditDeptChecked, setBulkEditDeptChecked] = useState(true);
   const [deleteConfirmation, setDeleteConfirmation] = useState<{ category: string, id: string | string[], name?: string } | null>(null);
   const [apbdResetConfirmation, setApbdResetConfirmation] = useState<boolean>(false);
+  const [clearAllConfirmation, setClearAllConfirmation] = useState<boolean>(false);
   const [editingTelaah, setEditingTelaah] = useState<GDriveItem | null>(null);
   const [editTelaahForm, setEditTelaahForm] = useState({ name: '', driveLink: '', size: '', date: '' });
   const [editingSertifikat, setEditingSertifikat] = useState<GDriveItem | null>(null);
@@ -416,10 +417,10 @@ export default function App() {
     else setTelaahList([]);
 
     if (storedSertifikat) setSertifikatList(JSON.parse(storedSertifikat));
-    else setSertifikatList(initialSertifikat()); // Preloaded 98 items!
+    else setSertifikatList([]);
 
     if (storedPerjadin) setPerjadinList(JSON.parse(storedPerjadin));
-    else setPerjadinList(initialPerjadin()); // Preloaded 5 items!
+    else setPerjadinList([]);
 
     if (storedBlud) setBludList(JSON.parse(storedBlud));
     else setBludList([]);
@@ -428,7 +429,7 @@ export default function App() {
     else setApbdInputs({});
 
     if (storedActivities) setActivities(JSON.parse(storedActivities));
-    else setActivities(PRESET_ACTIVITIES);
+    else setActivities([]);
 
     if (storedConfig) {
       const config = JSON.parse(storedConfig);
@@ -448,15 +449,15 @@ export default function App() {
 
   // Save changes to localStorage on any state modification
   useEffect(() => {
-    if (telaahList.length > 0) localStorage.setItem('app_telaah', JSON.stringify(telaahList));
+    localStorage.setItem('app_telaah', JSON.stringify(telaahList));
   }, [telaahList]);
   
   useEffect(() => {
-    if (sertifikatList.length > 0) localStorage.setItem('app_sertifikat', JSON.stringify(sertifikatList));
+    localStorage.setItem('app_sertifikat', JSON.stringify(sertifikatList));
   }, [sertifikatList]);
 
   useEffect(() => {
-    if (perjadinList.length > 0) localStorage.setItem('app_perjadin', JSON.stringify(perjadinList));
+    localStorage.setItem('app_perjadin', JSON.stringify(perjadinList));
   }, [perjadinList]);
 
   useEffect(() => {
@@ -1270,6 +1271,25 @@ export default function App() {
     triggerToast('Seluruh inputan bulanan APBD telah direset.');
     addActivity('Melakukan reset isi Rincian Anggaran APBD');
     setApbdResetConfirmation(false);
+  };
+
+  const confirmClearAllData = () => {
+    setTelaahList([]);
+    setSertifikatList([]);
+    setPerjadinList([]);
+    setBludList([]);
+    setApbdInputs({});
+    setActivities([]);
+    
+    localStorage.removeItem('app_telaah');
+    localStorage.removeItem('app_sertifikat');
+    localStorage.removeItem('app_perjadin');
+    localStorage.removeItem('app_blud');
+    localStorage.removeItem('app_apbd_inputs');
+    localStorage.removeItem('app_activities');
+    
+    triggerToast('Semua data berhasil dihapus dan dikosongkan!', 'success');
+    setClearAllConfirmation(false);
   };
 
   // EXPORT FULL BACKUP (.json) - 100% Offline, no cloud database required
@@ -4200,6 +4220,31 @@ export default function App() {
                 </button>
               </div>
 
+              {/* Reset All App Data */}
+              <div className="bg-slate-950 rounded-[2.5rem] border border-slate-800 p-8 shadow-xl space-y-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-15 bg-rose-500/10 rounded-xl flex items-center justify-center text-rose-400 font-bold p-2">
+                    <Trash2 className="w-6 h-6 text-rose-500" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-white">Kosongkan Semua Data Web</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">Hapus seluruh data telaah staf, sertifikat, perjalanan dinas, BLUD, dan input anggaran daerah.</p>
+                  </div>
+                </div>
+
+                <div className="bg-rose-500/5 rounded-2xl p-4 border border-rose-500/10 text-xs text-rose-300 leading-relaxed font-sans">
+                  Peringatan: Seluruh data lokal yang telah dimasukkan atau dimuat di web akan dikosongkan. Pastikan Anda telah mengunduh backup (ekspor) jika ingin menyimpannya terlebih dahulu.
+                </div>
+
+                <button 
+                  type="button"
+                  onClick={() => setClearAllConfirmation(true)}
+                  className="bg-rose-650 hover:bg-rose-600 text-white font-bold text-xs px-6 py-3 rounded-xl transition-colors shadow-lg shadow-rose-950/20"
+                >
+                  Hapus Semua Data Sekarang
+                </button>
+              </div>
+
             </motion.div>
           )}
           </AnimatePresence>
@@ -5599,6 +5644,71 @@ export default function App() {
                   className="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-xs py-3 rounded-xl shadow-lg shadow-amber-650/15 transition-all cursor-pointer"
                 >
                   Ya, Reset Penuh
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {clearAllConfirmation && (
+          <motion.div 
+            id="modal-clear-all-confirmation" 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+              className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl p-6 space-y-6"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
+                  <Trash2 className="w-6 h-6 text-rose-500" />
+                </div>
+                <div>
+                  <h4 className="text-base font-black text-white uppercase tracking-wider">Kosongkan Semua Data</h4>
+                  <p className="text-[10px] text-rose-400 font-bold uppercase tracking-widest mt-0.5">Tindakan Irreversible</p>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-400 leading-relaxed font-sans">
+                Tindakan ini akan mengosongkan seluruh data yang tersimpan di web ini, termasuk semua:
+                <br />
+                • Daftar Telaah Staf
+                <br />
+                • Daftar Sertifikat Peserta
+                <br />
+                • Laporan Kegiatan Perjadin
+                <br />
+                • Rincian Anggaran BLUD
+                <br />
+                • Seluruh Input Bulanan APBD & Riwayat Aktivitas
+              </p>
+
+              <div className="bg-rose-500/5 p-3.5 rounded-xl border border-rose-500/15">
+                <p className="text-[10px] text-rose-400 font-bold tracking-tight leading-relaxed font-sans">
+                  Peringatan: Seluruh data lokal dan riwayat akan dihapus secara permanen dari browser Anda.
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button 
+                  onClick={() => setClearAllConfirmation(false)}
+                  className="flex-1 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 font-extrabold text-xs py-3 rounded-xl transition-all cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button 
+                  onClick={confirmClearAllData}
+                  className="flex-1 bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs py-3 rounded-xl shadow-lg transition-all cursor-pointer"
+                >
+                  Ya, Kosongkan Semua Data
                 </button>
               </div>
             </motion.div>
