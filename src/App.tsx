@@ -4117,31 +4117,8 @@ export default function App() {
                     <FolderOpen className="w-6 h-6" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-black text-white">Google Drive Credentials</h3>
+                    <h3 className="text-lg font-black text-white">Google Drive Connections</h3>
                     <p className="text-xs text-slate-400 mt-0.5">Atur folder utama dokumen penelaahan dan sertifikat.</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                  <div>
-                    <label className="block text-[10px] text-slate-400 font-extrabold uppercase mb-2">API Key (Opsional)</label>
-                    <input 
-                      type="text" 
-                      placeholder="AIzaSy..."
-                      value={googleConfig.driveApiKey}
-                      onChange={(e) => setGoogleConfig({ ...googleConfig, driveApiKey: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-800 hover:border-slate-700/80 p-3 text-xs rounded-xl focus:outline-none focus:border-indigo-500 text-slate-100 font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] text-slate-400 font-extrabold uppercase mb-2">Client ID (Opsional)</label>
-                    <input 
-                      type="text" 
-                      placeholder="xxx-xxx.apps.googleusercontent.com"
-                      value={googleConfig.driveClientId}
-                      onChange={(e) => setGoogleConfig({ ...googleConfig, driveClientId: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-800 hover:border-slate-700/80 p-3 text-xs rounded-xl focus:outline-none focus:border-indigo-500 text-slate-100 font-bold"
-                    />
                   </div>
                 </div>
 
@@ -4189,27 +4166,15 @@ export default function App() {
                   <p className="text-[10px] text-slate-500 mt-2 font-bold tracking-tight">ID default telah diset untuk Spreadsheet ID: 1T8QxUuWna4T-YV7wPiYQendHGhmAgy13tXlYRm7P1mw</p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                  <div>
-                    <label className="block text-[10px] text-slate-400 font-extrabold uppercase mb-2">Nama Sheet (Sheet Tab)</label>
-                    <input 
-                      type="text" 
-                      placeholder="Sheet1"
-                      value={googleConfig.sheetsName}
-                      onChange={(e) => setGoogleConfig({ ...googleConfig, sheetsName: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-800 hover:border-slate-700/80 p-3 text-xs rounded-xl focus:outline-none focus:border-indigo-500 text-slate-100 font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] text-slate-400 font-extrabold uppercase mb-2">API Key Google Sheets (Opsional)</label>
-                    <input 
-                      type="text" 
-                      placeholder="AIzaSy..."
-                      value={googleConfig.sheetsApiKey}
-                      onChange={(e) => setGoogleConfig({ ...googleConfig, sheetsApiKey: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-800 hover:border-slate-700/80 p-3 text-xs rounded-xl focus:outline-none focus:border-indigo-500 text-slate-100 font-bold"
-                    />
-                  </div>
+                <div className="mb-6">
+                  <label className="block text-[10px] text-slate-400 font-extrabold uppercase mb-2">Nama Sheet (Sheet Tab)</label>
+                  <input 
+                    type="text" 
+                    placeholder="Sheet1"
+                    value={googleConfig.sheetsName}
+                    onChange={(e) => setGoogleConfig({ ...googleConfig, sheetsName: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-800 hover:border-slate-700/80 p-3 text-xs rounded-xl focus:outline-none focus:border-indigo-500 text-slate-100 font-bold"
+                  />
                 </div>
 
                 <button 
