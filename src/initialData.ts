@@ -6,8 +6,8 @@
 import { GDriveItem, PerjadinItem, BudgetDetailNode } from './types';
 
 // Predefined Folder ID & Sheet ID as requested:
-export const DEFAULT_DRIVE_FOLDER_ID = '1dUcuP_LownZK-q6Cd4ecg94T9ZggHGXX';
-export const DEFAULT_SHEETS_SPREADSHEET_ID = '1T8QxUuWna4T-YV7wPiYQendHGhmAgy13tXlYRm7P1mw';
+export const DEFAULT_DRIVE_FOLDER_ID = '1hisGkRMlKP5BaQ_zWbGafww-t0bNZswm';
+export const DEFAULT_SHEETS_SPREADSHEET_ID = '1MQmsKaAud0vEeC_jJ6Uip15OUQEb53LSDdFsH96upHw';
 
 export const INITIAL_SER_NAMES = [
   "Abdul_Menan.png",

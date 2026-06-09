@@ -185,3 +185,52 @@ export const syncBludToGoogleSheets = async (
     throw new Error(`Google Sheets Update gagal: ${response.statusText} (${response.status})`);
   }
 };
+
+/**
+ * Append uploaded PDF metadata to real Google Sheets spreadsheet
+ */
+export const appendPdfToGoogleSheets = async (
+  spreadsheetId: string,
+  sheetName: string,
+  pdfData: { id: string; name: string; size: string; date: string; category: string; driveLink: string }
+): Promise<void> => {
+  const token = await getAccessToken();
+  if (!token) {
+    throw new Error('Segera login/masuk dengan akun Google Anda terlebih dahulu.');
+  }
+
+  // We write to SheetName!A:F range
+  const range = `${sheetName || 'Sheet1'}!A:F`;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED`;
+
+  const values = [
+    [
+      pdfData.id,
+      pdfData.name,
+      pdfData.size,
+      pdfData.date,
+      pdfData.category.toUpperCase(),
+      pdfData.driveLink
+    ]
+  ];
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      range,
+      majorDimension: 'ROWS',
+      values,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Sheets Append Error Response:', errorText);
+    throw new Error(`Google Sheets Append gagal: ${response.statusText} (${response.status})`);
+  }
+};
+
