@@ -59,6 +59,9 @@ import {
   budgetData 
 } from './initialData';
 
+import { initAuth, googleSignIn, googleSignOut, uploadFileToDrive, syncBludToGoogleSheets } from './lib/googleAuth';
+import { User } from 'firebase/auth';
+
 // Month lists
 const MONTHS_KEY = ['jan', 'feb', 'mar', 'apr', 'mei', 'jun', 'jul', 'agu', 'sep', 'okt', 'nov', 'des'];
 const MONTHS_LABEL_ID = [
@@ -120,6 +123,11 @@ export default function App() {
 
   // Active Session PDF list (documents in current session)
   const [uploadedPdfs, setUploadedPdfs] = useState<Array<{ id: string, name: string, size: string, date: string, url: string }>>([]);
+
+  // Google Drive & Sheets Auth Session Space
+  const [googleUser, setGoogleUser] = useState<User | null>(null);
+  const [googleToken, setGoogleToken] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState<boolean>(true);
 
   // Toast System
   const [toasts, setToasts] = useState<Array<{ id: string, message: string, type: 'success' | 'error' | 'info' }>>([]);
@@ -400,6 +408,57 @@ export default function App() {
       time: new Date().toISOString()
     };
     setActivities(prev => [newAct, ...prev].slice(0, 15));
+  };
+
+  // Load Initial Google OAuth Sync Connection on Mount
+  useEffect(() => {
+    const unsubscribe = initAuth(
+      (user, token) => {
+        setGoogleUser(user);
+        setGoogleToken(token);
+        setAuthLoading(false);
+      },
+      () => {
+        setGoogleUser(null);
+        setGoogleToken(null);
+        setAuthLoading(false);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  const handleGoogleLogin = async () => {
+    try {
+      setAuthLoading(true);
+      const res = await googleSignIn();
+      if (res) {
+        setGoogleUser(res.user);
+        setGoogleToken(res.accessToken);
+        triggerToast('Keamanan Google Drive & Sheets berhasil terhubung!', 'success');
+        addActivity('Berhasil Login Google Workspace');
+      }
+    } catch (err: any) {
+      console.error(err);
+      triggerToast(`Gagal menghubungkan Google: ${err.message || err}`, 'error');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleGoogleLogout = async () => {
+    try {
+      setAuthLoading(true);
+      await googleSignOut();
+      setGoogleUser(null);
+      setGoogleToken(null);
+      triggerToast('Koneksi Google diputuskan.', 'info');
+      addActivity('Memutuskan Sesi Google Workspace');
+    } catch (err: any) {
+      console.error(err);
+      triggerToast('Gagal memutuskan Google.', 'error');
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
   // 1. Initial State Loading & Storage Interaction

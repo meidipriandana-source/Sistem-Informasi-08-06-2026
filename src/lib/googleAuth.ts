@@ -1,0 +1,187 @@
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
+import firebaseConfig from '../../firebase-applet-config.json';
+import { BludItem } from '../types';
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+export const auth = getAuth(app);
+
+const provider = new GoogleAuthProvider();
+// Add required OAuth scopes
+provider.addScope('https://www.googleapis.com/auth/drive.file');
+provider.addScope('https://www.googleapis.com/auth/spreadsheets');
+
+// Force Google to prompt select-account and consent if needed
+provider.setCustomParameters({
+  prompt: 'select_account'
+});
+
+let isSigningIn = false;
+let cachedAccessToken: string | null = null;
+
+// Initialize Auth Listener
+export const initAuth = (
+  onAuthSuccess: (user: User, token: string) => void,
+  onAuthFailure: () => void
+) => {
+  return onAuthStateChanged(auth, async (user: User | null) => {
+    if (user) {
+      if (cachedAccessToken) {
+        onAuthSuccess(user, cachedAccessToken);
+      } else if (!isSigningIn) {
+        cachedAccessToken = null;
+        onAuthFailure();
+      }
+    } else {
+      cachedAccessToken = null;
+      onAuthFailure();
+    }
+  });
+};
+
+// Sign In trigger (must be initiated by user gesture)
+export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
+  try {
+    isSigningIn = true;
+    const result = await signInWithPopup(auth, provider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (!credential?.accessToken) {
+      throw new Error('Gagal mendapatkan token akses dari Google.');
+    }
+
+    cachedAccessToken = credential.accessToken;
+    return { user: result.user, accessToken: cachedAccessToken };
+  } catch (error: any) {
+    console.error('Firebase Auth Popup Error:', error);
+    throw error;
+  } finally {
+    isSigningIn = false;
+  }
+};
+
+export const getAccessToken = async (): Promise<string | null> => {
+  return cachedAccessToken;
+};
+
+export const googleSignOut = async () => {
+  await auth.signOut();
+  cachedAccessToken = null;
+};
+
+/**
+ * Upload physical PDF/document to Google Drive Folder
+ */
+export const uploadFileToDrive = async (
+  file: File,
+  folderId: string
+): Promise<{ id: string; name: string; webViewLink: string }> => {
+  const token = await getAccessToken();
+  if (!token) {
+    throw new Error('Segera login/masuk dengan akun Google Anda terlebih dahulu.');
+  }
+
+  // Google Drive multipart body format
+  const metadata = {
+    name: file.name,
+    mimeType: file.type || 'application/pdf',
+    parents: folderId ? [folderId] : undefined,
+  };
+
+  const form = new FormData();
+  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+  form.append('file', file);
+
+  const response = await fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: form,
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Drive Upload Error Response:', errorText);
+    throw new Error(`Google Drive Upload gagal: ${response.statusText} (${response.status})`);
+  }
+
+  const data = await response.json();
+  return {
+    id: data.id,
+    name: data.name,
+    webViewLink: data.webViewLink || `https://drive.google.com/file/d/${data.id}/view`,
+  };
+};
+
+/**
+ * Push BLUD data to real Google Sheets spreadsheet
+ */
+export const syncBludToGoogleSheets = async (
+  spreadsheetId: string,
+  sheetName: string,
+  bludList: BludItem[]
+): Promise<void> => {
+  const token = await getAccessToken();
+  if (!token) {
+    throw new Error('Segera login/masuk dengan akun Google Anda terlebih dahulu.');
+  }
+
+  // We write to SheetName!A1 range
+  const range = `${sheetName || 'Sheet1'}!A1:I5000`;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`;
+
+  // Prepare table headers and rows
+  const values = [
+    [
+      'ID REGISTRASI',
+      'NAMA KEGIATAN',
+      'ALOKASI ANGGARAN (RP)',
+      'REALISASI BELANJA (RP)',
+      'SISA ALOKASI (RP)',
+      'RASIO (%)',
+      'BULAN PELAKSANAAN',
+      'PENANGGUNG JAWAB (PIC)',
+      'SUB-UNIT DEPARTEMEN / TIM'
+    ]
+  ];
+
+  bludList.forEach((item) => {
+    const sisa = item.anggaran - item.realisasi;
+    const rasio = item.anggaran > 0 ? ((item.realisasi / item.anggaran) * 100).toFixed(2) : '0.00';
+    values.push([
+      item.id,
+      item.kegiatan,
+      item.anggaran.toString(),
+      item.realisasi.toString(),
+      sisa.toString(),
+      `${rasio}%`,
+      item.bulan,
+      item.pic || 'Meidi Priandana',
+      item.department || 'Sub Bagian Program & Anggaran'
+    ]);
+  });
+
+  // Use PUT to completely overwrite/update the target block
+  const response = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      range,
+      majorDimension: 'ROWS',
+      values,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Sheets Sync Error Response:', errorText);
+    throw new Error(`Google Sheets Update gagal: ${response.statusText} (${response.status})`);
+  }
+};
