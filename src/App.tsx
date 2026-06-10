@@ -707,17 +707,13 @@ export default function App() {
   };
 
   const handleOpenPdf = (item: { name: string, driveLink: string, date?: string, size?: string, category?: string }) => {
-    if (item.driveLink.startsWith('blob:')) {
-      window.open(item.driveLink, '_blank');
-    } else {
-      setActivePdfPreview({
-        name: item.name,
-        url: item.driveLink,
-        date: item.date,
-        size: item.size,
-        category: item.category
-      });
-    }
+    setActivePdfPreview({
+      name: item.name,
+      url: item.driveLink,
+      date: item.date,
+      size: item.size,
+      category: item.category
+    });
   };
 
   // REAL AND SIMULATED ENGINE FOR GOOGLE DRIVE & SHEETS FILE UPLOADING
@@ -6108,6 +6104,18 @@ export default function App() {
                   </a>
                   <button 
                     onClick={() => {
+                      if (activePdfPreview.url.startsWith('blob:')) {
+                        const iframe = document.querySelector('iframe[title="PDF Live Browser Native Frame"]') as HTMLIFrameElement;
+                        if (iframe && iframe.contentWindow) {
+                          try {
+                            iframe.contentWindow.focus();
+                            iframe.contentWindow.print();
+                            return;
+                          } catch (e) {
+                            console.error(e);
+                          }
+                        }
+                      }
                       const printWin = window.open(activePdfPreview.url, '_blank');
                       if(printWin) {
                         printWin.focus();
