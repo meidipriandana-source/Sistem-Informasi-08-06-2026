@@ -18,7 +18,13 @@ provider.setCustomParameters({
 });
 
 let isSigningIn = false;
-let cachedAccessToken: string | null = null;
+let cachedAccessToken: string | null = (() => {
+  try {
+    return localStorage.getItem('google_workspace_access_token');
+  } catch (e) {
+    return null;
+  }
+})();
 
 // Initialize Auth Listener
 export const initAuth = (
@@ -31,10 +37,16 @@ export const initAuth = (
         onAuthSuccess(user, cachedAccessToken);
       } else if (!isSigningIn) {
         cachedAccessToken = null;
+        try {
+          localStorage.removeItem('google_workspace_access_token');
+        } catch (e) {}
         onAuthFailure();
       }
     } else {
       cachedAccessToken = null;
+      try {
+        localStorage.removeItem('google_workspace_access_token');
+      } catch (e) {}
       onAuthFailure();
     }
   });
@@ -51,6 +63,11 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     }
 
     cachedAccessToken = credential.accessToken;
+    try {
+      localStorage.setItem('google_workspace_access_token', credential.accessToken);
+    } catch (e) {
+      console.error('Failed to save access token to localStorage:', e);
+    }
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
     console.error('Firebase Auth Popup Error:', error);
@@ -67,6 +84,11 @@ export const getAccessToken = async (): Promise<string | null> => {
 export const googleSignOut = async () => {
   await auth.signOut();
   cachedAccessToken = null;
+  try {
+    localStorage.removeItem('google_workspace_access_token');
+  } catch (e) {
+    console.error('Failed to remove access token from localStorage:', e);
+  }
 };
 
 /**
