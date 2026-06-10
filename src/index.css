@@ -153,3 +153,42 @@ html.light #sidebar .bg-slate-900 {
   }
 }
 
+/* Certificate Expiration Custom Animations */
+@keyframes cert-alert-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 4px rgba(239, 68, 68, 0.4);
+    border-color: rgba(239, 68, 68, 0.5);
+  }
+  50% {
+    transform: scale(1.03);
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.8);
+    border-color: rgba(239, 68, 68, 0.9);
+  }
+}
+
+.animate-cert-alert {
+  animation: cert-alert-pulse 1.8s infinite ease-in-out;
+}
+
+@keyframes soft-blink {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+.animate-soft-blink {
+  animation: soft-blink 1.2s infinite ease-in-out;
+}
+
+@keyframes gentle-shake {
+  0%, 85%, 100% { transform: translateX(0); }
+  87% { transform: translateX(-2.5px); }
+  89% { transform: translateX(2.5px); }
+  91% { transform: translateX(-1.5px); }
+  93% { transform: translateX(1.5px); }
+  95% { transform: translateX(-0.5px); }
+  97% { transform: translateX(0.5px); }
+}
+
+.animate-gentle-shake {
+  animation: gentle-shake 3.5s infinite ease-in-out;
+}

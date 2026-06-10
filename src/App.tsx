@@ -38,7 +38,15 @@ import {
   ArrowUp,
   ArrowDown,
   RotateCcw,
-  ExternalLink
+  RotateCw,
+  ZoomIn,
+  ZoomOut,
+  ExternalLink,
+  Database,
+  Loader2,
+  Cpu,
+  MoreVertical,
+  Copy
 } from 'lucide-react';
 
 import { 
@@ -103,6 +111,9 @@ export default function App() {
   // Navigation
   const [activeSection, setActiveSection] = useState<string>('dashboard');
   const [activeAnggaranTab, setActiveAnggaranTab] = useState<'apbd' | 'blud'>('blud');
+  const [dragOverBlud, setDragOverBlud] = useState(false);
+  const [dragOverApbd, setDragOverApbd] = useState(false);
+  const [showBludTooltip, setShowBludTooltip] = useState(false);
 
   // File states (Local or LocalStorage persistent)
   const [telaahList, setTelaahList] = useState<GDriveItem[]>([]);
@@ -135,6 +146,13 @@ export default function App() {
 
   // Search states for Certs & Telaah
   const [searchCertQuery, setSearchCertQuery] = useState('');
+  const [selectedCertYear, setSelectedCertYear] = useState('');
+  const [selectedCertIssuer, setSelectedCertIssuer] = useState('');
+  const [expandedCertId, setExpandedCertId] = useState<string | null>(null);
+  const [activeMenuCertId, setActiveMenuCertId] = useState<string | null>(null);
+  const [sertifikatSubTab, setSertifikatSubTab] = useState<'inhouse' | 'outhouse'>('inhouse');
+  const [certViewDensity, setCertViewDensity] = useState<'normal' | 'compact'>('normal');
+  const [allowCertShake, setAllowCertShake] = useState<boolean>(true);
   const [certPage, setCertPage] = useState(1);
   const itemsPerPage = 8;
 
@@ -156,7 +174,7 @@ export default function App() {
   const [editingTelaah, setEditingTelaah] = useState<GDriveItem | null>(null);
   const [editTelaahForm, setEditTelaahForm] = useState({ name: '', driveLink: '', size: '', date: '' });
   const [editingSertifikat, setEditingSertifikat] = useState<GDriveItem | null>(null);
-  const [editSertifikatForm, setEditSertifikatForm] = useState({ name: '', driveLink: '', size: '', date: '' });
+  const [editSertifikatForm, setEditSertifikatForm] = useState({ name: '', driveLink: '', size: '', date: '', certType: 'inhouse' as 'inhouse' | 'outhouse', expiryDate: '', year: '', issuer: '' });
   const [editingPerjadin, setEditingPerjadin] = useState<PerjadinItem | null>(null);
   const [editPerjadinForm, setEditPerjadinForm] = useState({ name: '', driveLink: '', size: '', date: '', bulan: '', tujuan: '' });
   const [quickPreviewItem, setQuickPreviewItem] = useState<GDriveItem | null>(null);
@@ -177,6 +195,13 @@ export default function App() {
   // Theme state
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     return (localStorage.getItem('app_theme') as 'dark' | 'light') || 'dark';
+  });
+
+  // LocalStorage storage sync indicators
+  const [localSyncStatus, setLocalSyncStatus] = useState<'idle' | 'saving' | 'saved'>('saved');
+  const [lastSavedTime, setLastSavedTime] = useState<string>(() => {
+    const now = new Date();
+    return now.toTimeString().split(' ')[0]; // HH:MM:SS
   });
 
   useEffect(() => {
@@ -367,6 +392,16 @@ export default function App() {
   };
 
   const [activePdfPreview, setActivePdfPreview] = useState<{ name: string, url: string, date?: string, size?: string, category?: string } | null>(null);
+  const [pdfZoom, setPdfZoom] = useState<number>(100);
+  const [pdfRotation, setPdfRotation] = useState<number>(0);
+
+  useEffect(() => {
+    if (activePdfPreview) {
+      setPdfZoom(100);
+      setPdfRotation(0);
+    }
+  }, [activePdfPreview]);
+
   const [manualUploadFile, setManualUploadFile] = useState<File | null>(null);
 
   // Upload zones simulations
@@ -477,6 +512,26 @@ export default function App() {
   };
 
   // 1. Initial State Loading & Storage Interaction
+  const isInitialLoadFinished = useRef(false);
+  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const triggerLocalSync = () => {
+    if (!isInitialLoadFinished.current) return;
+    setLocalSyncStatus('saving');
+    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+    syncTimeoutRef.current = setTimeout(() => {
+      setLocalSyncStatus('saved');
+      const now = new Date();
+      setLastSavedTime(now.toTimeString().split(' ')[0]);
+    }, 700);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+    };
+  }, []);
+
   useEffect(() => {
     // Load from local storage
     const storedTelaah = localStorage.getItem('app_telaah');
@@ -525,35 +580,46 @@ export default function App() {
         sheetsName: 'Sheet1'
       });
     }
+
+    setTimeout(() => {
+      isInitialLoadFinished.current = true;
+    }, 1200);
   }, []);
 
   // Save changes to localStorage on any state modification
   useEffect(() => {
     localStorage.setItem('app_telaah', JSON.stringify(telaahList));
+    triggerLocalSync();
   }, [telaahList]);
   
   useEffect(() => {
     localStorage.setItem('app_sertifikat', JSON.stringify(sertifikatList));
+    triggerLocalSync();
   }, [sertifikatList]);
 
   useEffect(() => {
     localStorage.setItem('app_perjadin', JSON.stringify(perjadinList));
+    triggerLocalSync();
   }, [perjadinList]);
 
   useEffect(() => {
     localStorage.setItem('app_blud', JSON.stringify(bludList));
+    triggerLocalSync();
   }, [bludList]);
 
   useEffect(() => {
     localStorage.setItem('app_apbd_inputs', JSON.stringify(apbdInputs));
+    triggerLocalSync();
   }, [apbdInputs]);
 
   useEffect(() => {
     localStorage.setItem('app_activities', JSON.stringify(activities));
+    triggerLocalSync();
   }, [activities]);
 
   useEffect(() => {
     localStorage.setItem('app_google_config', JSON.stringify(googleConfig));
+    triggerLocalSync();
   }, [googleConfig]);
 
   // Recursively flatten the Budget Detail Structure
@@ -649,12 +715,71 @@ export default function App() {
   // Grand Total both systems
   const totalCombinedTerpakai = totalAPBDRealisasi + bludRealisasiTotal;
 
-  // Filter Preloaded Certificates based on Name query
+  // Dynamically compute list of available years for certificates
+  const availableCertYears = useMemo(() => {
+    const years = new Set<string>();
+    sertifikatList.forEach(item => {
+      if (item.year) {
+        years.add(item.year);
+      } else if (item.date) {
+        const parts = item.date.split('-');
+        if (parts[0] && parts[0].length === 4) {
+          years.add(parts[0]);
+        }
+      }
+    });
+    return Array.from(years).sort().reverse();
+  }, [sertifikatList]);
+
+  // Dynamically compute list of available issuing institutions for certificates
+  const availableCertIssuers = useMemo(() => {
+    const issuers = new Set<string>();
+    sertifikatList.forEach(item => {
+      if (item.issuer) {
+        issuers.add(item.issuer);
+      }
+    });
+    return Array.from(issuers).sort();
+  }, [sertifikatList]);
+
+  // Filter Preloaded Certificates based on Name query, sub-tab selection, year and issuer
   const filteredSertifikat = useMemo(() => {
     const query = searchCertQuery.toLowerCase().trim();
-    if (!query) return sertifikatList;
-    return sertifikatList.filter(item => item.name.toLowerCase().includes(query));
-  }, [sertifikatList, searchCertQuery]);
+    return sertifikatList.filter(item => {
+      // 1. Tab check
+      const type = item.certType || 'inhouse';
+      if (type !== sertifikatSubTab) return false;
+
+      // 2. Query check (matches title/file name OR year OR issuer)
+      if (query) {
+        const nameMatch = item.name.toLowerCase().includes(query);
+        const issuerMatch = item.issuer ? item.issuer.toLowerCase().includes(query) : false;
+        const yearMatch = item.year ? item.year.includes(query) : false;
+        if (!nameMatch && !issuerMatch && !yearMatch) {
+          return false;
+        }
+      }
+
+      // 3. Year Filter check
+      if (selectedCertYear) {
+        let itemYear = item.year;
+        if (!itemYear && item.date) {
+          const parts = item.date.split('-');
+          if (parts[0] && parts[0].length === 4) {
+            itemYear = parts[0];
+          }
+        }
+        if (itemYear !== selectedCertYear) return false;
+      }
+
+      // 4. Issuer Filter check
+      if (selectedCertIssuer && item.issuer !== selectedCertIssuer) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [sertifikatList, searchCertQuery, selectedCertYear, selectedCertIssuer, sertifikatSubTab]);
 
   // Compute global search results across all three categories
   const globalSearchResults = useMemo(() => {
@@ -693,6 +818,9 @@ export default function App() {
 
   const totalCertPages = Math.ceil(filteredSertifikat.length / itemsPerPage) || 1;
 
+  // View density padding class for Certificate table
+  const certPadding = certViewDensity === 'compact' ? 'py-1.5 px-4' : 'py-4 px-6';
+
   // Time-ago Indonesian localized description
   const getTimeAgo = (dateStr: string) => {
     const now = new Date();
@@ -705,6 +833,65 @@ export default function App() {
     if (diffHours < 24) return `${diffHours} jam lalu`;
     const diffDays = Math.floor(diffHours / 24);
     return `${diffDays} hari lalu`;
+  };
+
+  // Helper to calculate certificate expiry days & generate status badge styling
+  const getExpiryStatus = (expiryDateStr?: string) => {
+    if (!expiryDateStr) {
+      return { 
+        label: 'Berlaku Selamanya', 
+        status: 'safe', 
+        daysLeft: 9999, 
+        formattedDate: 'N/A', 
+        color: 'text-slate-400 bg-slate-500/10 border-slate-500/10' 
+      };
+    }
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const expiry = new Date(expiryDateStr);
+    expiry.setHours(0, 0, 0, 0);
+    
+    const diffTime = expiry.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    const options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric' };
+    const formattedDate = expiry.toLocaleDateString('id-ID', options);
+    
+    if (diffDays < 0) {
+      return { 
+        label: `Expired (${Math.abs(diffDays)} hari lalu)`, 
+        status: 'expired', 
+        daysLeft: diffDays, 
+        formattedDate,
+        color: 'text-rose-400 bg-rose-500/15 border-rose-500/40 font-black animate-cert-alert shadow-[0_0_8px_rgba(239,68,68,0.2)]' 
+      };
+    } else if (diffDays === 0) {
+      return { 
+        label: 'Hari ini (Segera Perbarui!)', 
+        status: 'critical', 
+        daysLeft: diffDays, 
+        formattedDate,
+        color: 'text-rose-500 bg-rose-600/20 border-rose-500/55 font-black animate-cert-alert shadow-[0_0_12px_rgba(239,68,68,0.3)]' 
+      };
+    } else if (diffDays <= 30) {
+      return { 
+        label: `Akan Expire (${diffDays} hari)`, 
+        status: 'warning', 
+        daysLeft: diffDays, 
+        formattedDate,
+        color: 'text-amber-400 bg-amber-500/10 border-amber-500/20 font-bold animate-pulse' 
+      };
+    } else {
+      return { 
+        label: `Aktif (${diffDays} hari lagi)`, 
+        status: 'safe', 
+        daysLeft: diffDays, 
+        formattedDate,
+        color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/10 font-bold' 
+      };
+    }
   };
 
   const handleOpenPdf = (item: { name: string, driveLink: string, date?: string, size?: string, category?: string }) => {
@@ -765,20 +952,27 @@ export default function App() {
           size: sizeString,
           date: dateString,
           driveLink: driveRes.webViewLink || `https://drive.google.com/file/d/${driveRes.id}/view`,
-          category
+          category,
+          certType: category === 'sertifikat' ? sertifikatSubTab : undefined,
+          expiryDate: ''
         };
         
         // 3. Sync to Google Sheets
         setUploadProgress(prev => ({ ...prev, [category]: progressChunk + 10 }));
         
-        await appendPdfToGoogleSheets(sheetsId, sheetName, {
-          id: newItem.id,
-          name: newItem.name,
-          size: newItem.size,
-          date: newItem.date,
-          category: newItem.category,
-          driveLink: newItem.driveLink
-        });
+        try {
+          await appendPdfToGoogleSheets(sheetsId, sheetName, {
+            id: newItem.id,
+            name: newItem.name,
+            size: newItem.size,
+            date: newItem.date,
+            category: newItem.category,
+            driveLink: newItem.driveLink
+          });
+        } catch (sheetsErr: any) {
+          console.error('Failed to append upload info to Google Sheets, but continuing...', sheetsErr);
+          triggerToast('Berkas berhasil terunggah ke Google Drive, namun pencatatan otomatis ke Google Sheets gagal. Mohon periksa ID Spreadsheet Anda di Pengaturan.', 'info');
+        }
 
         uploadedItems.push(newItem);
       }
@@ -864,16 +1058,20 @@ export default function App() {
               : `${(manualUploadFile.size / 1048576).toFixed(1)} MB`;
 
           // Append to Sheet
-          await appendPdfToGoogleSheets(sheetsId, sheetName, {
-            id: customId,
-            name: manualUploadFile.name,
-            size: sizeStr,
-            date: new Date().toISOString().split('T')[0],
-            category: 'perjadin',
-            driveLink: finalDriveLink
-          });
-
-          triggerToast('Laporan manual berhasil diunggah dan tercatat di Sheets!', 'success');
+          try {
+            await appendPdfToGoogleSheets(sheetsId, sheetName, {
+              id: customId,
+              name: manualUploadFile.name,
+              size: sizeStr,
+              date: new Date().toISOString().split('T')[0],
+              category: 'perjadin',
+              driveLink: finalDriveLink
+            });
+            triggerToast('Laporan manual berhasil diunggah dan tercatat di Sheets!', 'success');
+          } catch (sheetsErr: any) {
+            console.error('Failed to append upload info to Google Sheets, but continuing...', sheetsErr);
+            triggerToast('Berkas sukses terunggah ke Google Drive, namun pencatatan otomatis ke Google Sheets gagal. Mohon periksa ID Spreadsheet Anda di Pengaturan.', 'info');
+          }
         } catch (error: any) {
           console.error(error);
           triggerToast(`Gagal mengunggah file laporannya ke Drive: ${error.message || error}`, 'error');
@@ -941,11 +1139,8 @@ export default function App() {
     setBludForm({ kegiatan: '', anggaran: '', realisasi: '', bulan: '', pic: '', department: '' });
   };
 
-  // Upload and Parse BLUD Data (.json or .csv)
-  const handleBludUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  // Reusable BLUD File Processor (for both Select and Drag-and-Drop)
+  const processBludFile = (file: File) => {
     const reader = new FileReader();
     const extension = file.name.split('.').pop()?.toLowerCase();
 
@@ -1061,6 +1256,13 @@ export default function App() {
     };
 
     reader.readAsText(file);
+  };
+
+  // Upload and Parse BLUD Data (.json or .csv)
+  const handleBludUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    processBludFile(file);
     e.target.value = '';
   };
 
@@ -1212,7 +1414,11 @@ export default function App() {
       name: item.name,
       driveLink: item.driveLink,
       size: item.size || '1.8 MB',
-      date: item.date || new Date().toISOString().split('T')[0]
+      date: item.date || new Date().toISOString().split('T')[0],
+      certType: item.certType || 'inhouse',
+      expiryDate: item.expiryDate || '',
+      year: item.year || '',
+      issuer: item.issuer || ''
     });
   };
 
@@ -1229,11 +1435,15 @@ export default function App() {
       name: editSertifikatForm.name,
       driveLink: editSertifikatForm.driveLink,
       size: editSertifikatForm.size,
-      date: editSertifikatForm.date
+      date: editSertifikatForm.date,
+      certType: editSertifikatForm.certType,
+      expiryDate: editSertifikatForm.expiryDate,
+      year: editSertifikatForm.year,
+      issuer: editSertifikatForm.issuer
     } : x));
 
     triggerToast('Berhasil memperbarui dokumen sertifikat!', 'success');
-    addActivity(`Mengedit dokumen sertifikat: "${editingSertifikat.name}" menjadi "${editSertifikatForm.name}"`);
+    addActivity(`Mengedit dokumen sertifikat: "${editingSertifikat.name}" menjadi "${editSertifikatForm.name}" (${editSertifikatForm.certType === 'inhouse' ? 'Inhouse' : 'Outhouse'})`);
     setEditingSertifikat(null);
   };
 
@@ -1500,11 +1710,8 @@ export default function App() {
     addActivity('Menjalankan Export Backup Sistem (.json)');
   };
 
-  // IMPORT RESTORE (.json)
-  const handleFileRestoreUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  // Reusable APBD / System Restore File Processor
+  const processApbdBackupFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
@@ -1519,7 +1726,7 @@ export default function App() {
           if (Array.isArray(payload.activities)) setActivities(payload.activities);
 
           triggerToast('Sistem berhasil dipulihkan dari Backup!', 'success');
-          addActivity('Sistem berhasil direstore via file Backup .json');
+          addActivity(`Sistem berhasil direstore via file Backup: ${file.name}`);
         } else {
           triggerToast('Struktur file backup tidak sesuai!', 'error');
         }
@@ -1528,6 +1735,13 @@ export default function App() {
       }
     };
     reader.readAsText(file);
+  };
+
+  // IMPORT RESTORE (.json)
+  const handleFileRestoreUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    processApbdBackupFile(file);
     e.target.value = ''; // Clean input element
   };
 
@@ -1916,6 +2130,39 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-6 shrink-0">
+            {/* LocalStorage Sync Status Indicator */}
+            <div 
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-[11px] font-semibold text-slate-300 shadow-md transition-all select-none"
+              title="Aplikasi memantau dan menyimpan setiap perubahan data Anda secara otomatis ke penyimpanan lokal browser Anda (LocalStorage)."
+            >
+              <div className="relative flex items-center justify-center">
+                <Database className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+                {localSyncStatus === 'saving' ? (
+                  <span className="absolute -top-1 -right-1 w-2/3 h-2/3 bg-amber-500 rounded-full animate-ping" />
+                ) : (
+                  <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+                )}
+              </div>
+              <div className="flex flex-col text-left">
+                <span className="font-extrabold text-[9.5px] leading-tight tracking-wider uppercase flex items-center gap-1">
+                  {localSyncStatus === 'saving' ? (
+                    <>
+                      <Loader2 className="w-2.5 h-2.5 animate-spin text-amber-400" />
+                      <span className="text-amber-400 font-sans font-black">Menyimpan...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-2.5 h-2.5 text-emerald-400" />
+                      <span className="text-emerald-400 font-sans font-black">Autosave</span>
+                    </>
+                  )}
+                </span>
+                <span className="text-[9.2px] text-slate-450 font-mono leading-none mt-0.5">
+                  {localSyncStatus === 'saving' ? 'Sync ke Lokal' : `Pukul ${lastSavedTime}`}
+                </span>
+              </div>
+            </div>
+
             {/* Beautiful Light & Dark Theme Toggle */}
             <button
               id="theme-toggler-btn"
@@ -1954,10 +2201,10 @@ export default function App() {
             <motion.div
               key="dashboard"
               id="section-dashboard"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.3, ease: 'easeOut' }}
+              initial={{ opacity: 0, x: -16, y: 0 }}
+              animate={{ opacity: 1, x: 0, y: 0 }}
+              exit={{ opacity: 0, x: 16, y: 0 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
               className="space-y-8"
             >
               
@@ -2102,10 +2349,10 @@ export default function App() {
             <motion.div
               key="telaah"
               id="section-telaah"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.3, ease: 'easeOut' }}
+              initial={{ opacity: 0, x: -16, y: 0 }}
+              animate={{ opacity: 1, x: 0, y: 0 }}
+              exit={{ opacity: 0, x: 16, y: 0 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
               className="space-y-8"
             >
               
@@ -2271,16 +2518,62 @@ export default function App() {
             <motion.div
               key="sertifikat"
               id="section-sertifikat"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.3, ease: 'easeOut' }}
+              initial={{ opacity: 0, x: -16, y: 0 }}
+              animate={{ opacity: 1, x: 0, y: 0 }}
+              exit={{ opacity: 0, x: 16, y: 0 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
               className="space-y-8"
             >
               
+              {/* SUB-DASHBOARD TABS FOR INHOUSE & OUTHOUSE */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-2 bg-slate-900 border border-slate-800 rounded-2xl sm:rounded-3xl shadow-xl animate-fadeIn">
+                <div className="flex flex-1 items-stretch sm:items-center gap-1.5">
+                  <button
+                    onClick={() => { setSertifikatSubTab('inhouse'); setCertPage(1); }}
+                    className={`flex-1 sm:flex-initial flex items-center justify-center gap-2.5 px-6 py-3 rounded-xl sm:rounded-2xl text-[11px] font-black uppercase tracking-wider cursor-pointer transition-all ${
+                      sertifikatSubTab === 'inhouse'
+                        ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-650/30'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-850'
+                    }`}
+                  >
+                    <span>🏨</span>
+                    <span>Sertifikat Inhouse</span>
+                    <span className={`text-[9.5px] px-2.5 py-0.5 rounded-full font-black ${
+                      sertifikatSubTab === 'inhouse' ? 'bg-indigo-500/30 text-white' : 'bg-slate-800 text-slate-400'
+                    }`}>
+                      {sertifikatList.filter(x => (x.certType || 'inhouse') === 'inhouse').length}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => { setSertifikatSubTab('outhouse'); setCertPage(1); }}
+                    className={`flex-1 sm:flex-initial flex items-center justify-center gap-2.5 px-6 py-3 rounded-xl sm:rounded-2xl text-[11px] font-black uppercase tracking-wider cursor-pointer transition-all ${
+                      sertifikatSubTab === 'outhouse'
+                        ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-650/30'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-850'
+                    }`}
+                  >
+                    <span>✈️</span>
+                    <span>Sertifikat Outhouse</span>
+                    <span className={`text-[9.5px] px-2.5 py-0.5 rounded-full font-black ${
+                      sertifikatSubTab === 'outhouse' ? 'bg-indigo-500/30 text-white' : 'bg-slate-800 text-slate-400'
+                    }`}>
+                      {sertifikatList.filter(x => x.certType === 'outhouse').length}
+                    </span>
+                  </button>
+                </div>
+
+                <div className="px-4 py-2 border-l border-slate-800 text-slate-400 hidden lg:flex items-center gap-2 text-[11.5px] font-bold">
+                  <span>💡</span>
+                  <span>Menampilkan sub-kategori sertifikat aktif</span>
+                </div>
+              </div>
+              
               {/* Dropzone cert */}
               <div className="bg-slate-950 p-8 rounded-[2.5rem] border border-slate-800 shadow-xl">
-                <h3 className="text-lg font-black text-white mb-2 uppercase tracking-wide">Upload Sertifikat Baru</h3>
+                <h3 className="text-lg font-black text-white mb-2 uppercase tracking-wide">
+                  Upload Sertifikat {sertifikatSubTab === 'inhouse' ? 'Inhouse' : 'Outhouse'} Baru
+                </h3>
                 <p className="text-sm text-slate-400 mb-6 font-semibold">Tersinkronisasi otomatis offline. Data tersimpan lokal di browser.</p>
 
                 <div 
@@ -2295,7 +2588,9 @@ export default function App() {
                   className="border-2 border-dashed border-slate-700 rounded-3xl p-10 text-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-950/10 transition-all group"
                 >
                   <Award className="w-12 h-12 text-slate-500 group-hover:text-indigo-400 mx-auto mb-4 group-hover:scale-110 transition-transform" />
-                  <p className="text-slate-300 font-bold text-lg">Klik untuk memilih file Gambar/PDF atau seret sertifikat ke sini</p>
+                  <p className="text-slate-300 font-bold text-lg">
+                    Klik untuk memilih file Gambar/PDF atau seret sertifikat {sertifikatSubTab === 'inhouse' ? 'inhouse' : 'outhouse'} ke sini
+                  </p>
                   <p className="text-xs text-slate-500 mt-2 font-semibold">Mendukung file PNG, JPG, PDF (Maks. 25MB)</p>
                   <input 
                     ref={fileInputSertifikatRef}
@@ -2323,16 +2618,20 @@ export default function App() {
               <div className="bg-slate-950 rounded-[2.5rem] border border-slate-800 p-8 shadow-xl">
                 
                 {/* Search Bar & Title */}
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6 bg-slate-900/40 p-4 rounded-3xl border border-slate-800/40">
                   <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                     <div>
-                      <h3 className="text-lg font-black text-white uppercase tracking-wider">Daftar Sertifikat Terdata</h3>
-                      <p className="text-xs font-semibold text-slate-400 mt-1">Ditemukan {filteredSertifikat.length} sertifikat</p>
+                      <h3 className="text-base font-black text-white uppercase tracking-wider">
+                        Daftar Sertifikat {sertifikatSubTab === 'inhouse' ? 'Inhouse' : 'Outhouse'}
+                      </h3>
+                      <p className="text-[11px] font-semibold text-slate-400 mt-1">
+                        Ditemukan {filteredSertifikat.length} sertifikat {sertifikatSubTab === 'inhouse' ? 'inhouse' : 'outhouse'}
+                      </p>
                     </div>
                     {selectedSertifikat.length > 0 && (
                       <button
                         onClick={() => handleDeleteBulk('sertifikat')}
-                        className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-black px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-lg shadow-rose-650/15 cursor-pointer transition-all animate-fadeIn shrink-0"
+                        className="bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-black px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-lg shadow-rose-650/15 cursor-pointer transition-all animate-fadeIn shrink-0"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                         <span>Hapus Terpilih ({selectedSertifikat.length})</span>
@@ -2340,16 +2639,120 @@ export default function App() {
                     )}
                   </div>
 
-                  <div className="relative w-full md:w-80 shrink-0">
-                    <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input 
-                      id="search-cert-input"
-                      type="text" 
-                      placeholder="Cari nama peserta / file..."
-                      value={searchCertQuery}
-                      onChange={(e) => { setSearchCertQuery(e.target.value); setCertPage(1); }}
-                      className="w-full pl-10 pr-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-bold"
-                    />
+                  {/* Dynamic Filtering Panel for Year & Issuing Institution */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
+                    {/* Input name search text */}
+                    <div className="relative flex-1 sm:w-56 min-w-[200px]">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input 
+                        id="search-cert-input"
+                        type="text" 
+                        placeholder="Nama peserta / file / penerbit..."
+                        value={searchCertQuery}
+                        onChange={(e) => { setSearchCertQuery(e.target.value); setCertPage(1); }}
+                        className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-[11px] text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-bold"
+                      />
+                    </div>
+
+                    {/* Dropdown filter year */}
+                    <div className="relative shrink-0 sm:w-32">
+                      <select
+                        value={selectedCertYear}
+                        onChange={(e) => { setSelectedCertYear(e.target.value); setCertPage(1); }}
+                        className="w-full px-2.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-[11px] text-slate-300 focus:outline-none focus:border-indigo-500 font-bold cursor-pointer"
+                      >
+                        <option value="">📆 Semua Tahun</option>
+                        {availableCertYears.map(year => (
+                          <option key={year} value={year}>{year}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Dropdown filter publisher */}
+                    <div className="relative shrink-0 sm:w-40">
+                      <select
+                        value={selectedCertIssuer}
+                        onChange={(e) => { setSelectedCertIssuer(e.target.value); setCertPage(1); }}
+                        className="w-full px-2.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-[11px] text-slate-300 focus:outline-none focus:border-indigo-500 font-bold cursor-pointer truncate"
+                      >
+                        <option value="">🏢 Semua Instansi</option>
+                        {availableCertIssuers.map(issuer => (
+                          <option key={issuer} value={issuer}>{issuer}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* View Density Switch */}
+                    <div className="flex bg-slate-950 border border-slate-800 rounded-xl p-1 shrink-0 items-center">
+                      <button
+                        onClick={() => {
+                          setCertViewDensity('normal');
+                          triggerToast('Tampilan normal diaktifkan', 'info');
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                          certViewDensity === 'normal'
+                            ? 'bg-indigo-650 text-white bg-indigo-600 shadow-md shadow-indigo-600/15 font-extrabold'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                        title="Tampilan Normal"
+                      >
+                        Normal
+                      </button>
+                      <button
+                        onClick={() => {
+                          setCertViewDensity('compact');
+                          triggerToast('Tampilan ringkas diaktifkan', 'info');
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                          certViewDensity === 'compact'
+                            ? 'bg-indigo-650 text-white bg-indigo-600 shadow-md shadow-indigo-600/15 font-extrabold'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                        title="Tampilan Ringkas"
+                      >
+                        Ringkas
+                      </button>
+                    </div>
+
+                    {/* Toggle Expiry Animation Shake */}
+                    <div className="flex bg-slate-950 border border-slate-800 rounded-xl p-1 shrink-0 items-center">
+                      <button
+                        onClick={() => {
+                          setAllowCertShake(prev => !prev);
+                          triggerToast(
+                            !allowCertShake 
+                              ? 'Animasi goyang sertifikat kedaluwarsa diaktifkan' 
+                              : 'Animasi goyang sertifikat kedaluwarsa dimatikan', 
+                            'info'
+                          );
+                        }}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                          allowCertShake
+                            ? 'bg-rose-950/40 text-rose-400 border border-rose-900/40 font-extrabold shadow-sm'
+                            : 'text-slate-500 hover:text-slate-400 font-bold'
+                        }`}
+                        title={allowCertShake ? "Matikan Efek Goyang Expired" : "Aktifkan Efek Goyang Expired"}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full ${allowCertShake ? 'bg-rose-500 animate-pulse' : 'bg-slate-700'}`} />
+                        <span>Efek Goyang: {allowCertShake ? 'ON' : 'OFF'}</span>
+                      </button>
+                    </div>
+
+                    {/* Active filter badge status / clear filter button */}
+                    {(searchCertQuery || selectedCertYear || selectedCertIssuer) && (
+                      <button
+                        onClick={() => {
+                          setSearchCertQuery('');
+                          setSelectedCertYear('');
+                          setSelectedCertIssuer('');
+                          setCertPage(1);
+                          triggerToast('Reset seluruh filter pencarian sertifikat', 'info');
+                        }}
+                        className="px-3 py-2 text-[10px] font-black text-rose-450 text-rose-400 hover:text-rose-300 bg-rose-950/20 hover:bg-rose-950/40 border border-rose-900/30 rounded-xl transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95 text-center shrink-0"
+                      >
+                        Reset Filter
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -2357,7 +2760,7 @@ export default function App() {
                   <table className="w-full">
                     <thead>
                       <tr className="border-b border-slate-800 text-[11px] font-black text-slate-400 uppercase tracking-wider text-left">
-                        <th className="py-4 px-6 w-12 text-center">
+                        <th className={`${certPadding} w-12 text-center`}>
                           <input 
                             type="checkbox" 
                             checked={paginatedSertifikat.length > 0 && paginatedSertifikat.every(x => selectedSertifikat.includes(x.id))}
@@ -2373,76 +2776,465 @@ export default function App() {
                             className="accent-indigo-500 rounded border-slate-800 bg-slate-900 cursor-pointer w-4 h-4"
                           />
                         </th>
-                        <th className="py-4 px-6 w-16">No</th>
-                        <th className="py-4 px-6">Nama File</th>
-                        <th className="py-4 px-6">Tipe / Ukuran</th>
-                        <th className="py-4 px-6">Waktu Terbaca</th>
-                        <th className="py-4 px-6">Tautan Dokumen</th>
-                        <th className="py-4 px-6 w-24 text-right">Aksi</th>
+                        <th className={`${certPadding} w-16`}>No</th>
+                        <th className={`${certPadding}`}>Nama File</th>
+                        <th className={`${certPadding}`}>Tipe / Ukuran</th>
+                        <th className={`${certPadding}`}>Waktu Terbaca</th>
+                        <th className={`${certPadding}`}>Tautan Dokumen</th>
+                        {sertifikatSubTab === 'inhouse' && <th className={`${certPadding}`}>Masa Berlaku</th>}
+                        <th className={`${certPadding} w-24 text-right`}>Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-900">
                       {paginatedSertifikat.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="py-12 text-center text-slate-500 font-bold block-empty">
+                          <td colSpan={sertifikatSubTab === 'inhouse' ? 8 : 7} className="py-12 text-center text-slate-500 font-bold block-empty">
                             Sertifikat tidak ditemukan. Coba ketikkan nama lain.
                           </td>
                         </tr>
                       ) : (
                         paginatedSertifikat.map((item, index) => {
                           const absoluteNo = (certPage - 1) * itemsPerPage + index + 1;
+                          const isExpanded = expandedCertId === item.id;
+                          const statusObj = getExpiryStatus(item.expiryDate);
+                          const isExpiredStatus = sertifikatSubTab === 'inhouse' && statusObj.status === 'expired';
                           return (
-                            <tr key={item.id} className="hover:bg-slate-900/50 transition-colors text-slate-300">
-                              <td className="py-4 px-6 text-center">
-                                <input 
-                                  type="checkbox" 
-                                  checked={selectedSertifikat.includes(item.id)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setSelectedSertifikat([...selectedSertifikat, item.id]);
-                                    } else {
-                                      setSelectedSertifikat(selectedSertifikat.filter(id => id !== item.id));
-                                    }
-                                  }}
-                                  className="accent-indigo-500 rounded border-slate-800 bg-slate-900 cursor-pointer w-4 h-4"
-                                />
-                              </td>
-                              <td className="py-4 px-6 font-bold">{absoluteNo}</td>
-                              <td className="py-4 px-6 font-semibold text-slate-100 truncate max-w-xs" title={item.name}>{item.name}</td>
-                              <td className="py-4 px-6 text-xs">
-                                <span className="text-emerald-400 font-bold bg-emerald-500/10 px-2.5 py-0.5 rounded-full inline-block">
-                                  {item.size || '6.6 MB'}
-                                </span>
-                              </td>
-                              <td className="py-4 px-6 text-xs text-slate-400 font-semibold">{item.date}</td>
-                              <td className="py-4 px-6">
-                               <button 
-                                 onClick={() => handleOpenPdf(item)}
-                                 className="text-xs bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-450 text-rose-400 font-bold px-3 py-1.5 rounded-xl inline-flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
-                               >
-                                 <FileText className="w-3.5 h-3.5 text-rose-500" />
-                                 <span>Buka PDF</span>
-                               </button>
-                             </td>
-                              <td className="py-4 px-6 text-right">
-                                <div className="inline-flex items-center justify-end gap-1.5">
-                                  <button 
-                                    onClick={() => handleStartEditSertifikat(item)}
-                                    className="text-amber-400 hover:text-amber-300 p-1.5 rounded-lg hover:bg-amber-500/10 transition-colors cursor-pointer"
-                                    title="Edit Nama/Detail Sertifikat"
-                                  >
-                                    <Edit className="w-4 h-4" />
-                                  </button>
-                                  <button 
-                                    onClick={() => handleDeleteRow('sertifikat', item.id)}
-                                    className="text-rose-400 hover:text-rose-300 p-1.5 rounded-lg hover:bg-rose-500/10 transition-colors cursor-pointer"
-                                    title="Hapus"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
+                            <React.Fragment key={item.id}>
+                              {/* Main Row */}
+                              <motion.tr 
+                                key={`${item.id}-${selectedCertYear}-${selectedCertIssuer}-${sertifikatSubTab}`}
+                                initial={{ opacity: 0, y: 12 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.3, delay: index * 0.035, ease: 'easeOut' }}
+                                onClick={() => setExpandedCertId(isExpanded ? null : item.id)}
+                                className={`transition-all duration-300 hover:scale-[1.005] hover:shadow-lg text-slate-300 cursor-pointer select-none border-l-2
+                                  ${isExpanded 
+                                    ? 'bg-indigo-950/20 border-l-indigo-500 hover:bg-indigo-950/30' 
+                                    : isExpiredStatus
+                                      ? 'bg-rose-950/10 border-l-rose-500 hover:bg-rose-950/15'
+                                      : 'border-l-transparent hover:bg-slate-900/50'
+                                  }
+                                  ${isExpiredStatus && allowCertShake ? 'animate-gentle-shake shadow-[inset_1px_0_0_#ef4444]' : isExpiredStatus ? 'shadow-[inset_1px_0_0_#ef4444]' : ''}
+                                `}
+                              >
+                                <td className={`${certPadding} text-center`} onClick={(e) => e.stopPropagation()}>
+                                  <input 
+                                    type="checkbox" 
+                                    checked={selectedSertifikat.includes(item.id)}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setSelectedSertifikat([...selectedSertifikat, item.id]);
+                                      } else {
+                                        setSelectedSertifikat(selectedSertifikat.filter(id => id !== item.id));
+                                      }
+                                    }}
+                                    className="accent-indigo-500 rounded border-slate-800 bg-slate-900 cursor-pointer w-4 h-4"
+                                  />
+                                </td>
+                                <td className={`${certPadding} font-bold`}>{absoluteNo}</td>
+                                <td className={`${certPadding} max-w-xs focus:outline-none`} title={item.name}>
+                                  <div className="flex items-center gap-2 max-w-full">
+                                    <div className={`font-semibold truncate transition-all duration-300 ${item.completed ? 'text-emerald-400 line-through opacity-70' : 'text-slate-100'}`}>
+                                      {item.name}
+                                    </div>
+                                    {item.completed && (
+                                      <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/20 text-emerald-400 text-[9px] font-black uppercase tracking-wider shadow-sm animate-fadeIn">
+                                        🎉 Selesai
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-indigo-400">
+                                      📆 {item.year || (item.date ? item.date.split('-')[0] : '2026')}
+                                    </span>
+                                    {item.issuer && (
+                                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-950/40 border border-indigo-900/30 text-indigo-300 truncate max-w-[150px]" title={item.issuer}>
+                                        🏢 {item.issuer}
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className={`${certPadding} text-xs`}>
+                                  <span className="text-emerald-400 font-bold bg-emerald-500/10 px-2.5 py-0.5 rounded-full inline-block">
+                                    {item.size || '6.6 MB'}
+                                  </span>
+                                </td>
+                                <td className={`${certPadding} text-xs text-slate-400 font-semibold`}>{item.date}</td>
+                                <td className={`${certPadding}`}>
+                                 <button 
+                                   onClick={(e) => {
+                                     e.stopPropagation();
+                                     handleOpenPdf(item);
+                                   }}
+                                   className="text-xs bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-450 text-rose-400 font-bold px-3 py-1.5 rounded-xl inline-flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                                 >
+                                   <FileText className="w-3.5 h-3.5 text-rose-500" />
+                                   <span>Buka PDF</span>
+                                 </button>
+                                </td>
+                                {sertifikatSubTab === 'inhouse' && (
+                                  <td className={`${certPadding}`}>
+                                    {(() => {
+                                      const statusObj = getExpiryStatus(item.expiryDate);
+                                      const barPercent = item.expiryDate 
+                                        ? Math.max(0, Math.min(100, (statusObj.daysLeft / 365) * 100)) 
+                                        : 100;
+                                        
+                                      let barBgColor = 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.3)]';
+                                      if (statusObj.status === 'expired') {
+                                        barBgColor = 'bg-rose-600 shadow-[0_0_6px_rgba(225,29,72,0.4)]';
+                                      } else if (statusObj.status === 'critical') {
+                                        barBgColor = 'bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.3)] animate-pulse';
+                                      } else if (statusObj.status === 'warning') {
+                                        barBgColor = 'bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.3)]';
+                                      } else if (statusObj.daysLeft <= 180) {
+                                        barBgColor = 'bg-teal-500 shadow-[0_0_6px_rgba(20,184,166,0.3)]';
+                                      }
+
+                                      return (
+                                        <div className="flex flex-col gap-2.5 items-start justify-center">
+                                          <div className="flex items-center">
+                                            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11.5px] ${statusObj.color}`}>
+                                              {statusObj.status === 'expired' || statusObj.status === 'critical' ? (
+                                                <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0 animate-bounce" />
+                                              ) : statusObj.status === 'warning' ? (
+                                                <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                              ) : (
+                                                <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                              )}
+                                              <span className="font-black tracking-tight">{statusObj.label}</span>
+                                            </span>
+                                          </div>
+                                          
+                                          {item.expiryDate ? (
+                                            <div className="w-full max-w-[155px] space-y-1">
+                                              <div className="flex items-center justify-between text-[9.5px] font-bold font-mono text-slate-400">
+                                                <span className={statusObj.status === 'expired' ? 'text-rose-400/90' : 'text-slate-400'}>
+                                                  Sisa Umur: {statusObj.daysLeft > 0 ? `${statusObj.daysLeft} Hari` : '0 Hari'}
+                                                </span>
+                                                <span className={statusObj.status === 'expired' ? 'text-rose-400 font-black' : 'text-slate-300'}>
+                                                  {Math.round(barPercent)}%
+                                                </span>
+                                              </div>
+                                              <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden border border-slate-800/80 relative">
+                                                <motion.div 
+                                                  initial={{ width: 0 }}
+                                                  animate={{ width: `${barPercent}%` }}
+                                                  transition={{ duration: 0.5, ease: 'easeOut' }}
+                                                  className={`h-full rounded-full ${barBgColor}`}
+                                                />
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <div className="w-full max-w-[155px] space-y-1 opacity-45">
+                                              <div className="flex items-center justify-between text-[9.5px] font-bold font-mono text-slate-500">
+                                                <span>Sisa Umur</span>
+                                                <span className="text-[12px]">∞</span>
+                                              </div>
+                                              <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden border border-slate-800/80">
+                                                <div className="h-full w-full rounded-full bg-indigo-500/35" />
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })()}
+                                  </td>
+                                )}
+                                <td className={`${certPadding} text-right`} onClick={(e) => e.stopPropagation()}>
+                                  <div className="inline-flex items-center justify-end gap-1.5 relative">
+                                    {/* Edit Button */}
+                                    <button 
+                                      onClick={() => handleStartEditSertifikat(item)}
+                                      className="text-amber-400 hover:text-amber-300 p-1.5 rounded-lg hover:bg-amber-500/10 transition-colors cursor-pointer"
+                                      title="Edit Nama/Detail"
+                                    >
+                                      <Edit className="w-4 h-4" />
+                                    </button>
+                                    
+                                    {/* Delete Button */}
+                                    <button 
+                                      onClick={() => handleDeleteRow('sertifikat', item.id)}
+                                      className="text-rose-400 hover:text-rose-300 p-1.5 rounded-lg hover:bg-rose-500/10 transition-colors cursor-pointer"
+                                      title="Hapus"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+
+                                    {/* Quick Actions Three-Dots Trigger */}
+                                    <div className="relative inline-block text-left">
+                                      <button 
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setActiveMenuCertId(activeMenuCertId === item.id ? null : item.id);
+                                        }}
+                                        className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                          activeMenuCertId === item.id
+                                            ? 'bg-indigo-600 text-white shadow-lg'
+                                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                                        }`}
+                                        title="Quick Action"
+                                      >
+                                        <MoreVertical className="w-4 h-4" />
+                                      </button>
+
+                                      <AnimatePresence>
+                                        {activeMenuCertId === item.id && (
+                                          <>
+                                            {/* Screen-wide overlay to catch click-outside and dismiss neatly */}
+                                            <div 
+                                              className="fixed inset-0 z-40 bg-transparent cursor-default" 
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setActiveMenuCertId(null);
+                                              }}
+                                            />
+                                            
+                                            <motion.div
+                                              initial={{ opacity: 0, scale: 0.95, y: -6 }}
+                                              animate={{ opacity: 1, scale: 1, y: 0 }}
+                                              exit={{ opacity: 0, scale: 0.95, y: -6 }}
+                                              transition={{ duration: 0.15 }}
+                                              className="absolute right-0 mt-2 w-44 rounded-xl border border-slate-800 bg-slate-950/95 backdrop-blur-md shadow-2xl z-50 overflow-hidden divide-y divide-slate-900"
+                                            >
+                                              <div className="py-1">
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setActiveMenuCertId(null);
+                                                    const link = document.createElement('a');
+                                                    link.href = item.driveLink;
+                                                    link.download = item.name;
+                                                    link.target = '_blank';
+                                                    document.body.appendChild(link);
+                                                    link.click();
+                                                    document.body.removeChild(link);
+                                                    triggerToast('Mengunduh sertifikat...', 'success');
+                                                  }}
+                                                  className="w-full text-left px-3.5 py-2 text-[11.5px] font-bold text-slate-300 hover:text-white hover:bg-indigo-600/30 flex items-center gap-2 transition-colors cursor-pointer"
+                                                >
+                                                  <Download className="w-3.5 h-3.5 text-indigo-400" />
+                                                  <span>Download</span>
+                                                </button>
+                                                
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setActiveMenuCertId(null);
+                                                    navigator.clipboard.writeText(item.driveLink);
+                                                    triggerToast('Tautan sertifikat berhasil disalin!', 'success');
+                                                  }}
+                                                  className="w-full text-left px-3.5 py-2 text-[11.5px] font-bold text-slate-300 hover:text-white hover:bg-indigo-600/30 flex items-center gap-2 transition-colors cursor-pointer"
+                                                >
+                                                  <Copy className="w-3.5 h-3.5 text-sky-400" />
+                                                  <span>Salin Link</span>
+                                                </button>
+                                              </div>
+
+                                              <div className="py-1">
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setActiveMenuCertId(null);
+                                                    setSertifikatList(prev => prev.map(x => x.id === item.id ? { ...x, completed: !x.completed } : x));
+                                                    const nextCompleted = !item.completed;
+                                                    triggerToast(`Sertifikat ditandai sebagai ${nextCompleted ? 'Selesai' : 'Belum Selesai'}`, 'success');
+                                                    addActivity(`Mengubah status sertifikat "${item.name}" menjadi ${nextCompleted ? 'Selesai' : 'Belum Selesai'}`);
+                                                  }}
+                                                  className="w-full text-left px-3.5 py-2 text-[11.5px] font-bold text-slate-300 hover:text-white hover:bg-indigo-600/30 flex items-center gap-2 transition-colors cursor-pointer"
+                                                >
+                                                  <FileCheck className={`w-3.5 h-3.5 ${item.completed ? 'text-amber-500' : 'text-emerald-400'}`} />
+                                                  <span>{item.completed ? 'Batalkan Selesai' : 'Tandai Selesai'}</span>
+                                                </button>
+                                              </div>
+                                            </motion.div>
+                                          </>
+                                        )}
+                                      </AnimatePresence>
+                                    </div>
+                                  </div>
+                                </td>
+                              </motion.tr>
+
+                              {/* Expanded Row / Image Preview Section */}
+                              <AnimatePresence initial={false}>
+                                {isExpanded && (
+                                  <tr className="bg-slate-950/40">
+                                    <td colSpan={sertifikatSubTab === 'inhouse' ? 8 : 7} className="p-5 border-l-2 border-l-indigo-500/80 bg-slate-950/20">
+                                      <motion.div
+                                        initial={{ opacity: 0, height: 0, scaleY: 0.95 }}
+                                        animate={{ opacity: 1, height: 'auto', scaleY: 1 }}
+                                        exit={{ opacity: 0, height: 0, scaleY: 0.95 }}
+                                        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                                        className="overflow-hidden"
+                                      >
+                                        <div className="flex flex-col xl:flex-row gap-6 p-1.5 items-stretch">
+                                          {/* Certificate Aesthetic Mockup Graphic Design Card */}
+                                          <div className="flex-1 bg-[#fcfbf7] text-slate-800 border-4 border-amber-200/80 rounded-2xl p-7 relative overflow-hidden shadow-2xl flex flex-col justify-between aspect-[1.414/2] sm:aspect-[1.414/1] w-full max-w-xl mx-auto min-h-[360px] select-text">
+                                            {/* Beautiful corner gold decals */}
+                                            <div className="absolute top-2 left-2 w-10 h-10 border-t-2 border-l-2 border-amber-600/40 pointer-events-none"></div>
+                                            <div className="absolute top-2 right-2 w-10 h-10 border-t-2 border-r-2 border-amber-600/40 pointer-events-none"></div>
+                                            <div className="absolute bottom-2 left-2 w-10 h-10 border-b-2 border-l-2 border-amber-600/40 pointer-events-none"></div>
+                                            <div className="absolute bottom-2 right-2 w-10 h-10 border-b-2 border-r-2 border-amber-600/40 pointer-events-none"></div>
+
+                                            {/* Outer double border line */}
+                                            <div className="absolute inset-4 border border-amber-600/20 pointer-events-none"></div>
+
+                                            {/* Certificate watermark crest on background */}
+                                            <div className="absolute inset-0 flex items-center justify-center opacity-[0.035] pointer-events-none">
+                                              <Award className="w-80 h-80 text-amber-900" />
+                                            </div>
+
+                                            {/* Content Header */}
+                                            <div className="text-center relative z-10 space-y-1.5">
+                                              <span className="text-[8px] font-black tracking-widest text-[#d97706] uppercase bg-amber-100 border border-amber-200/50 px-2 py-0.5 rounded-full inline-block">
+                                                PRATINJAU INTEGRITAS EKSTRAKSI
+                                              </span>
+                                              <h4 className="text-lg font-black font-serif tracking-normal text-[#1e293b] uppercase">
+                                                SERTIFIKAT PENGHARGAAN
+                                              </h4>
+                                              <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest font-mono">
+                                                NO. DOKUMEN: CERT-{item.id.toUpperCase()}
+                                              </p>
+                                            </div>
+
+                                            {/* Body Name Recipient */}
+                                            <div className="text-center relative z-10 my-4 space-y-2">
+                                              <p className="text-[10px] font-semibold text-slate-450 text-slate-500 italic">
+                                                Diberikan secara terhormat kepada:
+                                              </p>
+                                              <h5 className="text-xl sm:text-2xl font-extrabold font-serif text-slate-900 tracking-tight border-b-2 border-amber-400 w-fit mx-auto px-5 pb-1">
+                                                {getCleanRecipientName(item.name)}
+                                              </h5>
+                                              <p className="text-[10px] leading-relaxed text-slate-600 font-semibold max-w-sm sm:max-w-md mx-auto">
+                                                Atas dedikasi luar biasa serta kelulusan kompetensi dalam agenda pelatihan peningkatan mutu pelayanan publik yang diselenggarakan oleh <strong className="text-slate-800 font-black">{item.issuer || 'Kementerian Kesehatan RI'}</strong>.
+                                              </p>
+                                            </div>
+
+                                            {/* Footer signatures and seal badge */}
+                                            <div className="flex flex-col sm:flex-row justify-between items-center sm:items-end gap-4 relative z-10 pt-2 border-t border-slate-200/80 mt-1">
+                                              <div className="text-center sm:text-left space-y-0.5">
+                                                <span className="text-[8px] font-bold text-slate-400 block uppercase">
+                                                  INSTANSI PENERBIT
+                                                </span>
+                                                <span className="text-[10.5px] font-extrabold text-slate-800 truncate block max-w-[170px]">
+                                                  {item.issuer || 'Kementerian Kesehatan RI'}
+                                                </span>
+                                                <span className="text-[8px] font-bold text-indigo-500 block">
+                                                  Tahun Sertifikasi: {item.year || '2026'}
+                                                </span>
+                                              </div>
+
+                                              {/* Beautiful Gold Seal ribbon */}
+                                              <div className="flex flex-col items-center justify-center relative shrink-0">
+                                                <div className="w-11 h-11 bg-gradient-to-tr from-amber-400 via-amber-500 to-amber-600 rounded-full flex items-center justify-center shadow border-2 border-white relative z-10">
+                                                  <Award className="w-5 h-5 text-white" />
+                                                  <div className="absolute top-[80%] left-1.5 w-2.5 h-4 bg-amber-600 origin-top rotate-12 -z-10 rounded-b"></div>
+                                                  <div className="absolute top-[80%] right-1.5 w-2.5 h-4 bg-amber-500 origin-top -rotate-12 -z-10 rounded-b"></div>
+                                                </div>
+                                              </div>
+
+                                              <div className="text-center sm:text-right space-y-0.5">
+                                                <span className="text-[8px] font-bold text-slate-400 block uppercase">
+                                                  TANDA TANGAN ELEKTRONIK
+                                                </span>
+                                                {/* Signature SVG flourish path */}
+                                                <svg className="w-20 h-6 text-indigo-700/85 mx-auto sm:mr-0" viewBox="0 0 100 30" fill="none">
+                                                  <path d="M10 15 C 30 5, 40 25, 50 12 C 60 4, 70 28, 90 15" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                                                  <path d="M25 8 C 45 25, 60 5, 80 20" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.5" />
+                                                </svg>
+                                                <span className="text-[10px] font-extrabold text-slate-800 block">
+                                                  Sistem TTE BSrE
+                                                </span>
+                                                <span className="text-[8px] font-mono text-slate-400 block">
+                                                  NIP. 19830509 201012 1 002
+                                                </span>
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          {/* Mini Side Details card analyzing extraction */}
+                                          <div className="flex-1 flex flex-col justify-between space-y-4 text-slate-350">
+                                            <div className="space-y-3">
+                                              <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
+                                                <Cpu className="w-3.5 h-3.5 text-indigo-400" />
+                                                <h6 className="text-[11px] font-black text-white uppercase tracking-wider">
+                                                  Analisis & Ekstraksi AI Terpadu
+                                                </h6>
+                                              </div>
+
+                                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                                                <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800/80">
+                                                  <span className="text-[9px] font-bold text-slate-500 block uppercase">Nama Pemilik</span>
+                                                  <span className="font-extrabold text-white block mt-0.5">{getCleanRecipientName(item.name)}</span>
+                                                </div>
+                                                <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800/80">
+                                                  <span className="text-[9px] font-bold text-slate-500 block uppercase">Lembaga Penerbit</span>
+                                                  <span className="font-extrabold text-white block mt-0.5">{item.issuer || 'Kementerian Kesehatan RI'}</span>
+                                                </div>
+                                                <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800/80">
+                                                  <span className="text-[9px] font-bold text-slate-500 block uppercase">Tahun Lulus</span>
+                                                  <span className="font-semibold text-indigo-400 block mt-0.5">Tahun {item.year || (item.date ? item.date.split('-')[0] : '2026')}</span>
+                                                </div>
+                                                <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800/80">
+                                                  <span className="text-[9px] font-bold text-slate-500 block uppercase">
+                                                    {sertifikatSubTab === 'inhouse' ? 'Masa Kedaluwarsa' : 'Status Dokumen'}
+                                                  </span>
+                                                  <span className={`font-semibold block mt-0.5 ${sertifikatSubTab === 'inhouse' ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                                    {sertifikatSubTab === 'inhouse' 
+                                                      ? (item.expiryDate || 'Seumur Hidup / Tidak Kedaluwarsa') 
+                                                      : 'Berlaku Selamanya'
+                                                    }
+                                                  </span>
+                                                </div>
+                                              </div>
+
+                                              <div className="bg-indigo-950/10 border border-indigo-900/30 p-3 rounded-xl text-[11px] leading-relaxed text-slate-350">
+                                                <p className="font-medium text-slate-300">
+                                                  Integritas data terverifikasi aman melalui API internal. Pratinjau ini memvisualisasikan data digital sertifikat tanpa mengunduh seluruh file PDF berukuran besar.
+                                                </p>
+                                              </div>
+                                            </div>
+
+                                            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/60" onClick={(e) => e.stopPropagation()}>
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleOpenPdf(item);
+                                                }}
+                                                className="bg-indigo-600 hover:bg-indigo-500 text-white text-[10.5px] font-black px-3.5 py-2 rounded-xl flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 shadow-lg shadow-indigo-600/10"
+                                              >
+                                                <ExternalLink className="w-3 h-3" />
+                                                <span>Buka PDF</span>
+                                              </button>
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleStartEditSertifikat(item);
+                                                }}
+                                                className="bg-slate-950 hover:bg-slate-900 border border-slate-800 text-amber-400 text-[10.5px] font-black px-3.5 py-2 rounded-xl flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                                              >
+                                                <Edit className="w-3 h-3" />
+                                                <span>Edit Detail</span>
+                                              </button>
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setExpandedCertId(null);
+                                                }}
+                                                className="bg-slate-950 hover:bg-slate-900 border border-slate-850 text-slate-400 hover:text-white text-[10.5px] font-bold px-3 py-2 rounded-xl cursor-pointer transition-all active:scale-95 ml-auto"
+                                              >
+                                                Tutup Pratinjau
+                                              </button>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </motion.div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </AnimatePresence>
+                            </React.Fragment>
                           );
                         })
                       )}
@@ -2495,10 +3287,10 @@ export default function App() {
             <motion.div
               key="perjadin"
               id="section-perjadin"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.3, ease: 'easeOut' }}
+              initial={{ opacity: 0, x: -16, y: 0 }}
+              animate={{ opacity: 1, x: 0, y: 0 }}
+              exit={{ opacity: 0, x: 16, y: 0 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
               className="space-y-8"
             >
               
@@ -2664,10 +3456,10 @@ export default function App() {
             <motion.div
               key="anggaran"
               id="section-anggaran"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.3, ease: 'easeOut' }}
+              initial={{ opacity: 0, x: -16, y: 0 }}
+              animate={{ opacity: 1, x: 0, y: 0 }}
+              exit={{ opacity: 0, x: 16, y: 0 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
               className="space-y-8"
             >
               
@@ -2702,7 +3494,37 @@ export default function App() {
                     setActiveAnggaranTab('blud');
                     triggerToast('Membuka Sub Folder: Anggaran BLUD', 'info');
                   }}
-                  className={`p-6 rounded-3xl border cursor-pointer select-none transition-all duration-300 relative group overflow-hidden
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDragOverBlud(true);
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    setDragOverBlud(false);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOverBlud(false);
+                    const files = e.dataTransfer.files;
+                    if (files && files.length > 0) {
+                      const file = files[0];
+                      const ext = file.name.split('.').pop()?.toLowerCase();
+                      if (ext === 'json' || ext === 'csv') {
+                        processBludFile(file);
+                        setActiveAnggaranTab('blud');
+                      } else {
+                        triggerToast('Sub-folder BLUD hanya menerima berkas data anggaran .json atau .csv!', 'error');
+                      }
+                    }
+                  }}
+                  onMouseEnter={() => setShowBludTooltip(true)}
+                  onMouseLeave={() => {
+                    setShowBludTooltip(false);
+                    setDragOverBlud(false);
+                  }}
+                  className={`p-6 rounded-3xl border cursor-pointer select-none transition-all duration-500 ease-out relative group active:scale-[1.02] active:rotate-1 hover:scale-[1.01] hover:border-indigo-500/50 hover:shadow-[0_0_15px_rgba(99,102,241,0.2),_inset_0_0_15px_rgba(99,102,241,0.25)] shadow-[inset_0_0_10px_rgba(99,102,241,0.1)]
+                    ${showBludTooltip ? 'overflow-visible' : 'overflow-hidden'}
+                    ${dragOverBlud ? 'scale-[1.03] ring-4 ring-indigo-500/50 border-indigo-500 bg-indigo-950/25' : ''}
                     ${activeAnggaranTab === 'blud' 
                       ? (theme === 'light'
                         ? 'bg-gradient-to-br from-indigo-50 to-white border-indigo-500 ring-2 ring-indigo-500/30 shadow-xl shadow-indigo-100'
@@ -2719,6 +3541,22 @@ export default function App() {
                   {activeAnggaranTab === 'blud' && (
                     <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none"></div>
                   )}
+
+                  {/* Reset Folder Status Button in Top Right, only visible on hover */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedBlud([]);
+                      setExpandedBludId(null);
+                      setBludSortField(null);
+                      setActiveAnggaranTab('blud');
+                      triggerToast('Status filter, sortir, dan seleksi sub-folder Anggaran BLUD berhasil direset!', 'success');
+                    }}
+                    title="Reset Tampilan & Status Folder"
+                    className="absolute top-4 right-4 z-20 p-2 rounded-xl border bg-white/90 dark:bg-slate-900/90 hover:bg-white dark:hover:bg-slate-800 border-slate-200/80 dark:border-slate-800 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all duration-300 shadow-sm opacity-0 group-hover:opacity-100 hover:scale-110 active:scale-95 cursor-pointer flex items-center justify-center"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  </button>
                   
                   <div className="flex items-start gap-4">
                     <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 transition-all duration-300
@@ -2742,7 +3580,11 @@ export default function App() {
                       </div>
                       <h3 className={`text-base font-black truncate ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>Anggaran BLUD RSUD dr. H. Jusuf SK</h3>
                       <p className={`text-xs mt-1 font-semibold leading-relaxed ${theme === 'light' ? 'text-slate-600' : 'text-slate-400'}`}>
-                        Rekapitulasi anggaran, realisasi real, dan porsi penyerapan rekap belanja BLUD.
+                        {dragOverBlud ? (
+                          <span className="text-indigo-400 font-bold animate-pulse">Lepas file di sini untuk langsung upload / update rincian belanja BLUD!</span>
+                        ) : (
+                          "Rekapitulasi anggaran, realisasi real, dan porsi penyerapan rekap belanja BLUD."
+                        )}
                       </p>
                       
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-4 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-550">
@@ -2752,6 +3594,86 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Interactive Dashboard Tooltip Component */}
+                  <AnimatePresence>
+                    {showBludTooltip && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 5, scale: 0.95 }}
+                        transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                        className={`absolute bottom-[105%] left-1/2 -translate-x-1/2 mb-3 z-30 pointer-events-none w-80 p-4 rounded-2xl border backdrop-blur-xl shadow-2xl transition-colors duration-300
+                          ${theme === 'light'
+                            ? 'bg-white/95 border-indigo-100 text-slate-800 shadow-indigo-100/50'
+                            : 'bg-slate-950/95 border-indigo-500/30 text-white shadow-[#6366f1]/10'
+                          }
+                        `}
+                      >
+                        {/* Header */}
+                        <div className="flex items-center gap-2 border-b border-slate-200/50 dark:border-slate-800/80 pb-2 mb-2">
+                          <div className="w-5 h-5 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-500 shrink-0">
+                            <Database className="w-3 h-3" />
+                          </div>
+                          <span className="text-[10px] font-black uppercase tracking-wider font-sans">
+                            Ikhtisar Anggaran BLUD
+                          </span>
+                          <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ml-auto
+                            ${theme === 'light' ? 'bg-indigo-50 text-indigo-600' : 'bg-indigo-950/50 text-indigo-300'}
+                          `}>
+                            Live Data
+                          </span>
+                        </div>
+
+                        {/* Financial Metrics Row */}
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center text-[11px]">
+                            <span className="text-slate-500 dark:text-slate-400 font-semibold">Pagu Total:</span>
+                            <span className="font-mono font-black text-indigo-600 dark:text-indigo-400">
+                              Rp {formatIDR(bludBudgetTotal)}
+                            </span>
+                          </div>
+
+                          <div className="flex justify-between items-center text-[11px]">
+                            <span className="text-slate-500 dark:text-slate-400 font-semibold">Realisasi (Terpakai):</span>
+                            <span className="font-mono font-black text-purple-600 dark:text-purple-400">
+                              Rp {formatIDR(bludRealisasiTotal)}
+                            </span>
+                          </div>
+
+                          <div className="flex justify-between items-center text-[11px]">
+                            <span className="text-slate-500 dark:text-slate-400 font-semibold">Sisa Anggaran:</span>
+                            <span className={`font-mono font-black ${(bludBudgetTotal - bludRealisasiTotal) < 0 ? 'text-rose-500 animate-pulse' : 'text-emerald-500'}`}>
+                              Rp {formatIDR(bludBudgetTotal - bludRealisasiTotal)}
+                            </span>
+                          </div>
+
+                          {/* Progress/Absorption indicator */}
+                          <div className="pt-2">
+                            <div className="flex justify-between items-center text-[9px] uppercase tracking-wider mb-1 font-bold">
+                              <span className="text-slate-500 dark:text-slate-400">Porsi Penyerapan:</span>
+                              <span className="text-indigo-500 dark:text-indigo-450 font-mono font-black">
+                                {bludBudgetTotal > 0 ? ((bludRealisasiTotal / bludBudgetTotal) * 100).toFixed(1) : '0.0'}%
+                              </span>
+                            </div>
+                            <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-900 rounded-full overflow-hidden border border-slate-300/40 dark:border-slate-800/40">
+                              <motion.div 
+                                initial={{ width: 0 }}
+                                animate={{ width: `${Math.min(100, bludBudgetTotal > 0 ? (bludRealisasiTotal / bludBudgetTotal) * 100 : 0)}%` }}
+                                transition={{ duration: 0.4, ease: 'easeOut' }}
+                                className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Tooltip Arrow */}
+                        <div className={`absolute top-full left-1/2 -translate-x-1/2 -mt-[1px] w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px]
+                          ${theme === 'light' ? 'border-t-white/95' : 'border-t-slate-950/95'}
+                        `} />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
 
                 {/* 2. APBD Folder Card */}
@@ -2761,7 +3683,34 @@ export default function App() {
                     setActiveAnggaranTab('apbd');
                     triggerToast('Membuka Sub Folder: Anggaran APBD', 'info');
                   }}
-                  className={`p-6 rounded-3xl border cursor-pointer select-none transition-all duration-300 relative group overflow-hidden
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDragOverApbd(true);
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    setDragOverApbd(false);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOverApbd(false);
+                    const files = e.dataTransfer.files;
+                    if (files && files.length > 0) {
+                      const file = files[0];
+                      const ext = file.name.split('.').pop()?.toLowerCase();
+                      if (ext === 'json') {
+                        processApbdBackupFile(file);
+                        setActiveAnggaranTab('apbd');
+                      } else if (ext === 'pdf') {
+                        handlePendukungPdfSelect(files);
+                        setActiveAnggaranTab('apbd');
+                      } else {
+                        triggerToast('Sub-folder APBD hanya menerima berkas .json (restore backup) atau .pdf (bukti pendukung)!', 'error');
+                      }
+                    }
+                  }}
+                  className={`p-6 rounded-3xl border cursor-pointer select-none transition-all duration-300 relative group overflow-hidden active:scale-[1.02]
+                    ${dragOverApbd ? 'scale-[1.03] ring-4 ring-indigo-500/50 border-indigo-500 bg-indigo-950/25' : ''}
                     ${activeAnggaranTab === 'apbd' 
                       ? (theme === 'light'
                         ? 'bg-gradient-to-br from-indigo-50 to-white border-indigo-500 ring-2 ring-indigo-500/30 shadow-xl shadow-indigo-100'
@@ -4245,10 +5194,10 @@ export default function App() {
             <motion.div
               key="settings"
               id="section-settings"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.3, ease: 'easeOut' }}
+              initial={{ opacity: 0, x: -16, y: 0 }}
+              animate={{ opacity: 1, x: 0, y: 0 }}
+              exit={{ opacity: 0, x: 16, y: 0 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
               className="space-y-8"
             >
               
@@ -5404,6 +6353,45 @@ export default function App() {
                   />
                 </div>
 
+                {/* Tipe Sertifikat selector */}
+                <div className="space-y-1.5">
+                  <label className={`text-[10px] font-black uppercase tracking-wider block
+                    ${theme === 'light' ? 'text-slate-600' : 'text-slate-400'}
+                  `}>
+                    Kategori / Tipe Sertifikat
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setEditSertifikatForm({ ...editSertifikatForm, certType: 'inhouse' })}
+                      className={`py-2 px-3 rounded-xl border text-[11px] font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                        editSertifikatForm.certType === 'inhouse'
+                          ? 'bg-indigo-650 text-white border-indigo-500 shadow-md shadow-indigo-600/10'
+                          : theme === 'light'
+                            ? 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-205'
+                            : 'bg-slate-950 hover:bg-slate-850 text-slate-300 border-slate-800'
+                      }`}
+                    >
+                      <span>🏨</span>
+                      <span>Inhouse</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditSertifikatForm({ ...editSertifikatForm, certType: 'outhouse' })}
+                      className={`py-2 px-3 rounded-xl border text-[11px] font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                        editSertifikatForm.certType === 'outhouse'
+                          ? 'bg-indigo-650 text-white border-indigo-500 shadow-md shadow-indigo-600/10'
+                          : theme === 'light'
+                            ? 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-205'
+                            : 'bg-slate-950 hover:bg-slate-850 text-slate-300 border-slate-800'
+                      }`}
+                    >
+                      <span>✈️</span>
+                      <span>Outhouse</span>
+                    </button>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   {/* Size input */}
                   <div className="space-y-1.5">
@@ -5446,6 +6434,83 @@ export default function App() {
                     />
                   </div>
                 </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Year input */}
+                  <div className="space-y-1.5">
+                    <label className={`text-[10px] font-black uppercase tracking-wider block
+                      ${theme === 'light' ? 'text-slate-600' : 'text-slate-400'}
+                    `}>
+                      Tahun Sertifikat
+                    </label>
+                    <input 
+                      type="text"
+                      value={editSertifikatForm.year}
+                      onChange={(e) => setEditSertifikatForm({ ...editSertifikatForm, year: e.target.value })}
+                      placeholder="Contoh: 2026"
+                      className={`w-full p-3 rounded-xl text-xs font-bold outline-none border transition-all duration-300
+                        ${theme === 'light' 
+                          ? 'bg-white text-slate-900 border-slate-300 focus:border-indigo-500' 
+                          : 'bg-slate-950 text-white border-slate-800 focus:border-indigo-500'
+                        }
+                      `}
+                    />
+                  </div>
+
+                  {/* Issuer/Instansi Penerbit input */}
+                  <div className="space-y-1.5">
+                    <label className={`text-[10px] font-black uppercase tracking-wider block
+                      ${theme === 'light' ? 'text-slate-600' : 'text-slate-400'}
+                    `}>
+                      Instansi Penerbit
+                    </label>
+                    <input 
+                      type="text"
+                      value={editSertifikatForm.issuer}
+                      onChange={(e) => setEditSertifikatForm({ ...editSertifikatForm, issuer: e.target.value })}
+                      placeholder="Contoh: RSUD dr H JUSUF SK"
+                      className={`w-full p-3 rounded-xl text-xs font-bold outline-none border transition-all duration-300
+                        ${theme === 'light' 
+                          ? 'bg-white text-slate-900 border-slate-300 focus:border-indigo-500' 
+                          : 'bg-slate-950 text-white border-slate-800 focus:border-indigo-500'
+                        }
+                      `}
+                    />
+                  </div>
+                </div>
+
+                {/* Expiry Date Input (only for Inhouse Certs) */}
+                {editSertifikatForm.certType === 'inhouse' && (
+                  <div className="space-y-1.5 pt-1">
+                    <label className={`text-[10px] font-black uppercase tracking-wider block
+                      ${theme === 'light' ? 'text-slate-600' : 'text-slate-400'}
+                    `}>
+                      Masa Berlaku Sertifikat (Kosongkan jika Berlaku Selamanya)
+                    </label>
+                    <input 
+                      type="date"
+                      value={editSertifikatForm.expiryDate || ''}
+                      onChange={(e) => setEditSertifikatForm({ ...editSertifikatForm, expiryDate: e.target.value })}
+                      className={`w-full p-3 rounded-xl text-xs font-bold outline-none border transition-all duration-300
+                        ${theme === 'light' 
+                          ? 'bg-white text-slate-900 border-slate-300 focus:border-indigo-500' 
+                          : 'bg-slate-950 text-white border-slate-800 focus:border-indigo-500'
+                        }
+                      `}
+                    />
+                    {editSertifikatForm.expiryDate && (() => {
+                      const statusObj = getExpiryStatus(editSertifikatForm.expiryDate);
+                      return (
+                        <div className="flex items-center gap-1.5 mt-1.5">
+                          <span className="text-[10.5px] font-extrabold text-slate-400">Pratinjau Status:</span>
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[10px] ${statusObj.color}`}>
+                            <span className="font-black tracking-tight">{statusObj.label}</span>
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
 
               <div className={`p-6 border-t flex justify-end gap-3 bg-slate-950/5
@@ -6230,6 +7295,65 @@ export default function App() {
 
                 {/* Right Column: Actual Web Browser PDF Embed */}
                 <div className="flex-1 flex flex-col min-h-[450px] relative bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden group shadow-lg">
+                  {/* PDF Controls Overlay floating over iframe */}
+                  <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-slate-950/80 backdrop-blur-md border border-slate-800 px-4 py-2 rounded-2xl flex items-center gap-3.5 shadow-xl select-none">
+                    <button
+                      onClick={() => setPdfZoom(prev => Math.max(50, prev - 25))}
+                      className="p-1 px-2.5 text-slate-300 hover:text-white transition-all flex items-center justify-center gap-1 cursor-pointer bg-slate-900 hover:bg-slate-800 active:scale-95 text-xs font-bold rounded-lg"
+                      title="Perkecil Tampilan (Zoom Out)"
+                    >
+                      <ZoomOut className="w-3.5 h-3.5" />
+                      <span>-25%</span>
+                    </button>
+
+                    <span className="text-xs font-mono font-black text-indigo-400 bg-indigo-950/50 px-2 py-0.5 rounded border border-indigo-900/30">
+                      {pdfZoom}%
+                    </span>
+
+                    <button
+                      onClick={() => setPdfZoom(prev => Math.min(300, prev + 25))}
+                      className="p-1 px-2.5 text-slate-300 hover:text-white transition-all flex items-center justify-center gap-1 cursor-pointer bg-slate-900 hover:bg-slate-800 active:scale-95 text-xs font-bold rounded-lg"
+                      title="Perbesar Tampilan (Zoom In)"
+                    >
+                      <ZoomIn className="w-3.5 h-3.5" />
+                      <span>+25%</span>
+                    </button>
+
+                    <div className="h-4 w-[1px] bg-slate-800"></div>
+
+                    <button
+                      onClick={() => setPdfRotation(prev => (prev - 90) % 360)}
+                      className="p-1.5 text-slate-300 hover:text-white transition-all flex items-center justify-center cursor-pointer bg-slate-900 hover:bg-slate-800 active:scale-95 rounded-lg"
+                      title="Putar Kiri (-90°)"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </button>
+
+                    <button
+                      onClick={() => setPdfRotation(prev => (prev + 90) % 360)}
+                      className="p-1.5 text-slate-300 hover:text-white transition-all flex items-center justify-center cursor-pointer bg-slate-900 hover:bg-slate-800 active:scale-95 rounded-lg"
+                      title="Putar Kanan (+90°)"
+                    >
+                      <RotateCw className="w-3.5 h-3.5" />
+                    </button>
+
+                    {(pdfZoom !== 100 || pdfRotation !== 0) && (
+                      <>
+                        <div className="h-4 w-[1px] bg-slate-800"></div>
+                        <button
+                          onClick={() => {
+                            setPdfZoom(100);
+                            setPdfRotation(0);
+                            triggerToast('Tampilan PDF disetel ulang ke ukuran standar');
+                          }}
+                          className="p-1 px-2 text-xs font-black text-rose-400 hover:text-rose-300 transition-colors bg-rose-950/40 hover:bg-rose-950/70 border border-rose-900/30 rounded-lg cursor-pointer"
+                        >
+                          Reset
+                        </button>
+                      </>
+                    )}
+                  </div>
+
                   <div className="absolute inset-0 z-0 flex flex-col items-center justify-center p-6 text-center select-none bg-slate-900 text-slate-500">
                     <FileText className="w-12 h-12 text-slate-800 animate-bounce mb-3" />
                     <p className="text-xs font-bold text-slate-400">Sedang Memuat Render PDF Asli...</p>
@@ -6252,6 +7376,11 @@ export default function App() {
                     })() : activePdfPreview.url}
                     className="w-full h-full relative z-10 border-none bg-slate-900"
                     title="PDF Live Browser Native Frame"
+                    style={{
+                      transform: `scale(${pdfZoom / 100}) rotate(${pdfRotation}deg)`,
+                      transformOrigin: 'center center',
+                      transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                    }}
                   />
                 </div>
 
@@ -6272,5 +7401,33 @@ export default function App() {
   // Indonesian thousands format
   function formatIDR(num: number) {
     return new Intl.NumberFormat('id-ID').format(num);
+  }
+
+  // Extractor to get clean recipient name from a filename
+  function getCleanRecipientName(fileName: string) {
+    let name = fileName.replace(/\.(pdf|doc|docx|png|jpg|jpeg)/gi, '');
+    const separators = [' - ', ' – ', ' -', '- '];
+    for (const sep of separators) {
+      if (name.includes(sep)) {
+        const parts = name.split(sep);
+        const lastPart = parts[parts.length - 1].trim();
+        const firstPart = parts[0].trim();
+        
+        // If the last part has keyword 'sertifikat' or 'pelatihan' or 'laporan', then name is in first part
+        const keywords = ['cert', 'sertifikat', 'pelatihan', 'laporan', 'lulus', 'peserta', 'seminar', 'webinar'];
+        const hasKeywordLast = keywords.some(kw => lastPart.toLowerCase().includes(kw));
+        const hasKeywordFirst = keywords.some(kw => firstPart.toLowerCase().includes(kw));
+        
+        if (hasKeywordLast && !hasKeywordFirst) {
+          return firstPart;
+        } else if (hasKeywordFirst && !hasKeywordLast) {
+          return lastPart;
+        }
+        
+        // Otherwise, prioritize whichever looks more like a person's name (commonly the first or last)
+        return lastPart;
+      }
+    }
+    return name;
   }
 }

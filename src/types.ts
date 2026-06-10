@@ -11,6 +11,10 @@ export interface GDriveItem {
   driveLink: string;
   target?: string;
   category?: 'telaah' | 'sertifikat' | 'perjadin';
+  certType?: 'inhouse' | 'outhouse';
+  expiryDate?: string;
+  issuer?: string;
+  year?: string;
 }
 
 export interface PerjadinItem extends GDriveItem {

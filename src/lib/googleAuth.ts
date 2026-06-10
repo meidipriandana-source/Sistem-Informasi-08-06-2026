@@ -125,13 +125,65 @@ export const uploadFileToDrive = async (
     }
   );
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('Drive Upload Error Response:', errorText);
-    throw new Error(`Google Drive Upload gagal: ${response.statusText} (${response.status})`);
+  let finalResponse = response;
+
+  if (!response.ok && response.status === 404 && folderId) {
+    try {
+      const clonedResponseForError = response.clone();
+      const errorText = await clonedResponseForError.text();
+      console.warn('Google Drive parent folder not found or inaccessible, trying fallback to root. Response raw:', errorText);
+      
+      let shouldFallback = false;
+      try {
+        const errObj = JSON.parse(errorText);
+        // Either the error message contains the folderId, or matches general 404 fileId parameter
+        if (errObj.error && (
+          (errObj.error.message && errObj.error.message.includes(folderId)) ||
+          (errObj.error.errors && errObj.error.errors.some((e: any) => e.location === 'fileId' || e.message.includes(folderId)))
+        )) {
+          shouldFallback = true;
+        }
+      } catch (parseErr) {
+        // Fallback-friendly message checks
+        if (errorText.includes(folderId) || errorText.includes('notFound')) {
+          shouldFallback = true;
+        }
+      }
+
+      if (shouldFallback) {
+        console.log('Falling back to root folder for upload.');
+        const fallbackMetadata = {
+          name: file.name,
+          mimeType: file.type || 'application/pdf',
+          parents: ['root'],
+        };
+        const fallbackForm = new FormData();
+        fallbackForm.append('metadata', new Blob([JSON.stringify(fallbackMetadata)], { type: 'application/json' }));
+        fallbackForm.append('file', file);
+
+        finalResponse = await fetch(
+          'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink',
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            body: fallbackForm,
+          }
+        );
+      }
+    } catch (fallbackErr) {
+      console.error('Failed to execute fallback mechanism:', fallbackErr);
+    }
   }
 
-  const data = await response.json();
+  if (!finalResponse.ok) {
+    const errorText = await finalResponse.text();
+    console.error('Drive Upload Error Response:', errorText);
+    throw new Error(`Google Drive Upload gagal: ${finalResponse.statusText} (${finalResponse.status})`);
+  }
+
+  const data = await finalResponse.json();
   return {
     id: data.id,
     name: data.name,

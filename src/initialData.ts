@@ -111,14 +111,38 @@ export const INITIAL_SER_NAMES = [
 ];
 
 export const initialSertifikat = (): GDriveItem[] => {
-  return INITIAL_SER_NAMES.map((name, i) => ({
-    id: `preload-ser-${i}`,
-    name,
-    size: name.includes("Yatmi") || name.includes("A_Zu") ? "6.7 MB" : "6.6 MB",
-    date: "2026-06-08",
-    driveLink: `https://drive.google.com/drive/folders/${DEFAULT_DRIVE_FOLDER_ID}`,
-    category: 'sertifikat'
-  }));
+  return INITIAL_SER_NAMES.map((name, i) => {
+    // Generate dates relative to current time 2026-06-10
+    let expiryDate = "2028-06-10";
+    if (i === 0) expiryDate = "2026-06-15"; // Expiring in 5 days (Urgent warning)
+    else if (i === 1) expiryDate = "2026-05-20"; // Already expired (Expired warning)
+    else if (i === 2) expiryDate = "2027-12-31"; // Safe
+    else if (i === 3) expiryDate = "2026-07-05"; // Expiring in 25 days (Warning)
+    else if (i === 4) expiryDate = "2026-06-05"; // Already expired (Expired warning)
+
+    // Assign diverse issuers and years
+    const issuers = [
+      "Kementerian Kesehatan RI",
+      "RSUD dr. H. Jusuf SK",
+      "PPSDM Kesehatan",
+      "Kementerian Kesehatan RI",
+      "RSUD dr. H. Jusuf SK"
+    ];
+    const years = ["2024", "2025", "2026", "2025", "2026"];
+
+    return {
+      id: `preload-ser-${i}`,
+      name,
+      size: name.includes("Yatmi") || name.includes("A_Zu") ? "6.7 MB" : "6.6 MB",
+      date: "2026-06-08",
+      driveLink: `https://drive.google.com/drive/folders/${DEFAULT_DRIVE_FOLDER_ID}`,
+      category: 'sertifikat',
+      certType: i % 2 === 0 ? 'inhouse' : 'outhouse',
+      expiryDate,
+      issuer: issuers[i % issuers.length],
+      year: years[i % years.length]
+    };
+  });
 };
 
 export const initialPerjadin = (): PerjadinItem[] => {
