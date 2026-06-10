@@ -164,6 +164,7 @@ export default function App() {
   const [isSyncingBludSheets, setIsSyncingBludSheets] = useState<boolean>(false);
   const [syncBludProgress, setSyncBludProgress] = useState<number>(0);
   const [bludSyncLog, setBludSyncLog] = useState<string>('');
+  const [unauthorizedDomainError, setUnauthorizedDomainError] = useState<string | null>(null);
 
   // Selected lists states for bulk delete operations
   const [selectedTelaah, setSelectedTelaah] = useState<string[]>([]);
@@ -430,6 +431,7 @@ export default function App() {
   const handleGoogleLogin = async () => {
     try {
       setAuthLoading(true);
+      setUnauthorizedDomainError(null);
       const res = await googleSignIn();
       if (res) {
         setGoogleUser(res.user);
@@ -439,6 +441,11 @@ export default function App() {
       }
     } catch (err: any) {
       console.error(err);
+      const errStr = err.toString() || '';
+      const errMessage = err.message || '';
+      if (errStr.includes('unauthorized-domain') || errMessage.includes('unauthorized-domain')) {
+        setUnauthorizedDomainError(window.location.hostname);
+      }
       triggerToast(`Gagal menghubungkan Google: ${err.message || err}`, 'error');
     } finally {
       setAuthLoading(false);
@@ -451,6 +458,7 @@ export default function App() {
       await googleSignOut();
       setGoogleUser(null);
       setGoogleToken(null);
+      setUnauthorizedDomainError(null);
       triggerToast('Koneksi Google diputuskan.', 'info');
       addActivity('Memutuskan Sesi Google Workspace');
     } catch (err: any) {
@@ -4316,6 +4324,45 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="space-y-4">
+                    {unauthorizedDomainError && (
+                      <div className="p-5 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-200 space-y-3 leading-relaxed animate-fadeIn">
+                        <div className="flex items-center gap-2">
+                          <span className="font-black text-rose-455 uppercase tracking-widest block text-xs">💡 SOLUSI ERROR: auth/unauthorized-domain</span>
+                        </div>
+                        <p className="font-medium text-slate-300">
+                          Domain web Anda saat ini belum diotorisasi dalam Firebase. Demi keamanan Google, proses masuk (SignIn Popup) hanya diizinkan bagi domain terdaftar.
+                        </p>
+                        <div className="bg-slate-950 p-4 rounded-xl border border-slate-850 space-y-2">
+                          <p className="font-extrabold text-white text-[10px] uppercase tracking-wider">Langkah Mudah Penyelesaian:</p>
+                          <ol className="list-decimal list-inside space-y-1.5 text-slate-400 font-bold ml-1">
+                            <li>Hubungi administrator atau buka <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Firebase Console</a> Anda.</li>
+                            <li>Pilih proyek Firebase Anda (<span className="text-white font-mono bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">sipanda-9b16b</span>).</li>
+                            <li>Buka menu <span className="text-indigo-400">Authentication</span> di sebelah kiri, lalu masuk ke tab <span className="text-indigo-400">Settings</span>.</li>
+                            <li>Cari kolom <span className="text-indigo-400">Authorized Domains</span> di bagian bawah halaman.</li>
+                            <li>Klik <span className="text-white font-extrabold bg-slate-800 px-1.5 py-0.5 rounded text-[10px]">Add Domain</span>, lalu masukkan domain berikut ini:</li>
+                          </ol>
+                        </div>
+                        <div className="flex flex-col sm:flex-row items-center gap-2 bg-slate-900 p-2.5 rounded-xl border border-slate-850 justify-between">
+                          <code className="text-[11px] font-mono font-black text-emerald-400 select-all break-all text-center sm:text-left">
+                            {unauthorizedDomainError}
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(unauthorizedDomainError);
+                              triggerToast('Domain disalin ke clipboard!', 'success');
+                            }}
+                            className="bg-indigo-600 hover:bg-indigo-500 text-white font-black text-[10px] px-3 py-1.5 rounded-lg active:scale-95 transition-transform shrink-0 cursor-pointer"
+                          >
+                            Salin Domain
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-slate-400 font-semibold italic">
+                          *Setelah ditambahkan, silakan muat ulang browser/halaman ini lalu klik tombol Hubungkan di bawah kembali.
+                        </p>
+                      </div>
+                    )}
+
                     <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-550/20 text-xs text-slate-300 leading-relaxed">
                       <span className="font-extrabold text-amber-400 block mb-1 uppercase">Sesi Kredensial Offline / Belum Terkoneksi</span>
                       Sistem sedang berjalan dalam mode simulasi offline. Silakan hubungkan akun Google Anda terlebih dahulu untuk mengaktifkan fungsionalitas unggah file langsung ke Drive dan sinkronisasi rincian anggaran BLUD ke Spreadsheet target secara live.
