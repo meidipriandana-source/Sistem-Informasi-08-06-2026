@@ -481,6 +481,9 @@ export default function App() {
   const fileInputPdfRef = useRef<HTMLInputElement>(null);
   const fileInputBludUploadRef = useRef<HTMLInputElement>(null);
   const fileInputBludRestoreRef = useRef<HTMLInputElement>(null);
+  const fileInputTelaahRestoreRef = useRef<HTMLInputElement>(null);
+  const fileInputSertifikatRestoreRef = useRef<HTMLInputElement>(null);
+  const fileInputPerjadinRestoreRef = useRef<HTMLInputElement>(null);
 
   // Reset states
   const [resetBludConfirm, setResetBludConfirm] = useState(false);
@@ -1359,6 +1362,135 @@ export default function App() {
     setResetBludConfirm(false);
     triggerToast('Seluruh data rincian anggaran BLUD berhasil direset!');
     addActivity('Mereset daftar rincian anggaran BLUD ke keadaan kosong');
+  };
+
+  // Export Telaah Masuk (.json)
+  const handleExportTelaahBackup = () => {
+    const payload = {
+      app: "SIPANDA (Sistem Pengelolaan Anggaran dan Dokumen) RSUD dr H JUSUF SK - Telaah Masuk",
+      timestamp: new Date().toISOString(),
+      telaah: telaahList
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const blobUrl = URL.createObjectURL(blob);
+    const dlink = document.createElement('a');
+    dlink.href = blobUrl;
+    dlink.download = `Backup-SIPANDA_Telaah_Masuk_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(dlink);
+    dlink.click();
+    document.body.removeChild(dlink);
+    triggerToast('Backup data Telaah Masuk sukses diunduh!', 'success');
+    addActivity('Mengekspor backup data Telaah Masuk (.json)');
+  };
+
+  // Restore Telaah Masuk (.json)
+  const handleTelaahRestore = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const payload = JSON.parse(event.target?.result as string);
+        const list = Array.isArray(payload) ? payload : (payload.telaah || payload.items || payload.data || []);
+        if (!Array.isArray(list)) {
+          triggerToast('Format file backup Telaah Masuk tidak valid!', 'error');
+          return;
+        }
+        setTelaahList(list);
+        triggerToast(`Sukses memulihkan ${list.length} data Telaah Masuk!`, 'success');
+        addActivity(`Memulihkan data Telaah Masuk dari backup (.json)`);
+      } catch (err) {
+        triggerToast('Gagal memulihkan backup Telaah Masuk: Format salah.', 'error');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  // Export Sertifikat (.json)
+  const handleExportSertifikatBackup = () => {
+    const payload = {
+      app: "SIPANDA (Sistem Pengelolaan Anggaran dan Dokumen) RSUD dr H JUSUF SK - Sertifikat",
+      timestamp: new Date().toISOString(),
+      sertifikat: sertifikatList
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const blobUrl = URL.createObjectURL(blob);
+    const dlink = document.createElement('a');
+    dlink.href = blobUrl;
+    dlink.download = `Backup-SIPANDA_Sertifikat_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(dlink);
+    dlink.click();
+    document.body.removeChild(dlink);
+    triggerToast('Backup data Sertifikat sukses diunduh!', 'success');
+    addActivity('Mengekspor backup data Sertifikat (.json)');
+  };
+
+  // Restore Sertifikat (.json)
+  const handleSertifikatRestore = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const payload = JSON.parse(event.target?.result as string);
+        const list = Array.isArray(payload) ? payload : (payload.sertifikat || payload.items || payload.data || []);
+        if (!Array.isArray(list)) {
+          triggerToast('Format file backup Sertifikat tidak valid!', 'error');
+          return;
+        }
+        setSertifikatList(list);
+        triggerToast(`Sukses memulihkan ${list.length} data Sertifikat!`, 'success');
+        addActivity(`Memulihkan data Sertifikat dari backup (.json)`);
+      } catch (err) {
+        triggerToast('Gagal memulihkan backup Sertifikat: Format salah.', 'error');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  // Export Laporan Kegiatan (.json)
+  const handleExportPerjadinBackup = () => {
+    const payload = {
+      app: "SIPANDA (Sistem Pengelolaan Anggaran dan Dokumen) RSUD dr H JUSUF SK - Laporan Kegiatan",
+      timestamp: new Date().toISOString(),
+      perjadin: perjadinList
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const blobUrl = URL.createObjectURL(blob);
+    const dlink = document.createElement('a');
+    dlink.href = blobUrl;
+    dlink.download = `Backup-SIPANDA_Laporan_Kegiatan_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(dlink);
+    dlink.click();
+    document.body.removeChild(dlink);
+    triggerToast('Backup data Laporan Kegiatan sukses diunduh!', 'success');
+    addActivity('Mengekspor backup data Laporan Kegiatan (.json)');
+  };
+
+  // Restore Laporan Kegiatan (.json)
+  const handlePerjadinRestore = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const payload = JSON.parse(event.target?.result as string);
+        const list = Array.isArray(payload) ? payload : (payload.perjadin || payload.items || payload.data || []);
+        if (!Array.isArray(list)) {
+          triggerToast('Format file backup Laporan Kegiatan tidak valid!', 'error');
+          return;
+        }
+        setPerjadinList(list);
+        triggerToast(`Sukses memulihkan ${list.length} data Laporan Kegiatan!`, 'success');
+        addActivity(`Memulihkan data Laporan Kegiatan dari backup (.json)`);
+      } catch (err) {
+        triggerToast('Gagal memulihkan backup Laporan Kegiatan: Format salah.', 'error');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   // Bulk Edit selected BLUD items (PIC and/or Department)
@@ -2428,7 +2560,34 @@ export default function App() {
               {/* Table List Card */}
               <div className="bg-slate-950 rounded-[2.5rem] border border-slate-800 p-8 shadow-xl">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-                  <h3 className="text-lg font-black text-white uppercase tracking-wider">Daftar Dokumen Telaah Masuk</h3>
+                  <div className="flex flex-wrap items-center gap-4">
+                    <h3 className="text-lg font-black text-white uppercase tracking-wider">Daftar Dokumen Telaah Masuk</h3>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleExportTelaahBackup}
+                        className="bg-indigo-950/40 hover:bg-indigo-900/40 text-indigo-400 border border-indigo-900/50 hover:border-indigo-700/50 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5"
+                        title="Ekspor backup data Telaah Masuk ke format JSON"
+                      >
+                        <Download className="w-3 h-3" />
+                        <span>Backup</span>
+                      </button>
+                      <button
+                        onClick={() => fileInputTelaahRestoreRef.current?.click()}
+                        className="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 hover:border-slate-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5"
+                        title="Pulihkan data Telaah Masuk dari file backup JSON"
+                      >
+                        <Upload className="w-3 h-3" />
+                        <span>Restore</span>
+                      </button>
+                      <input 
+                        ref={fileInputTelaahRestoreRef}
+                        type="file" 
+                        accept=".json"
+                        className="hidden" 
+                        onChange={handleTelaahRestore}
+                      />
+                    </div>
+                  </div>
                   {selectedTelaah.length > 0 && (
                     <button
                       onClick={() => handleDeleteBulk('telaah')}
@@ -2643,8 +2802,7 @@ export default function App() {
 
               {/* Table List Card */}
               <div className="bg-slate-950 rounded-[2.5rem] border border-slate-800 p-8 shadow-xl">
-                
-                {/* Search Bar & Title */}
+                 {/* Search Bar & Title */}
                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6 bg-slate-900/40 p-4 rounded-3xl border border-slate-800/40">
                   <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                     <div>
@@ -2654,6 +2812,31 @@ export default function App() {
                       <p className="text-[11px] font-semibold text-slate-400 mt-1">
                         Ditemukan {filteredSertifikat.length} sertifikat {sertifikatSubTab === 'inhouse' ? 'inhouse' : 'outhouse'}
                       </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleExportSertifikatBackup}
+                        className="bg-indigo-950/40 hover:bg-indigo-900/40 text-indigo-400 border border-indigo-900/50 hover:border-indigo-700/50 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5"
+                        title="Ekspor backup data Sertifikat ke format JSON"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Backup</span>
+                      </button>
+                      <button
+                        onClick={() => fileInputSertifikatRestoreRef.current?.click()}
+                        className="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 hover:border-slate-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5"
+                        title="Pulihkan data Sertifikat dari file backup JSON"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>Restore</span>
+                      </button>
+                      <input 
+                        ref={fileInputSertifikatRestoreRef}
+                        type="file" 
+                        accept=".json"
+                        className="hidden" 
+                        onChange={handleSertifikatRestore}
+                      />
                     </div>
                     {selectedSertifikat.length > 0 && (
                       <button
@@ -3371,7 +3554,34 @@ export default function App() {
               {/* Table List Card */}
               <div className="bg-slate-950 rounded-[2.5rem] border border-slate-800 p-8 shadow-xl">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-                  <h3 className="text-lg font-black text-white uppercase tracking-wider">Daftar Laporan Kegiatan Bulanan</h3>
+                  <div className="flex flex-wrap items-center gap-4">
+                    <h3 className="text-lg font-black text-white uppercase tracking-wider">Daftar Laporan Kegiatan Bulanan</h3>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleExportPerjadinBackup}
+                        className="bg-indigo-950/40 hover:bg-indigo-900/40 text-indigo-400 border border-indigo-900/50 hover:border-indigo-700/50 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5"
+                        title="Ekspor backup data Laporan Kegiatan ke format JSON"
+                      >
+                        <Download className="w-3 h-3" />
+                        <span>Backup</span>
+                      </button>
+                      <button
+                        onClick={() => fileInputPerjadinRestoreRef.current?.click()}
+                        className="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 hover:border-slate-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5"
+                        title="Pulihkan data Laporan Kegiatan dari file backup JSON"
+                      >
+                        <Upload className="w-3 h-3" />
+                        <span>Restore</span>
+                      </button>
+                      <input 
+                        ref={fileInputPerjadinRestoreRef}
+                        type="file" 
+                        accept=".json"
+                        className="hidden" 
+                        onChange={handlePerjadinRestore}
+                      />
+                    </div>
+                  </div>
                   {selectedPerjadin.length > 0 && (
                     <button
                       onClick={() => handleDeleteBulk('perjadin')}
