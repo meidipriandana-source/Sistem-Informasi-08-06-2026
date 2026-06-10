@@ -165,6 +165,7 @@ export default function App() {
   const [syncBludProgress, setSyncBludProgress] = useState<number>(0);
   const [bludSyncLog, setBludSyncLog] = useState<string>('');
   const [unauthorizedDomainError, setUnauthorizedDomainError] = useState<string | null>(null);
+  const [operationNotAllowedError, setOperationNotAllowedError] = useState<boolean>(false);
 
   // Selected lists states for bulk delete operations
   const [selectedTelaah, setSelectedTelaah] = useState<string[]>([]);
@@ -432,6 +433,7 @@ export default function App() {
     try {
       setAuthLoading(true);
       setUnauthorizedDomainError(null);
+      setOperationNotAllowedError(false);
       const res = await googleSignIn();
       if (res) {
         setGoogleUser(res.user);
@@ -446,6 +448,9 @@ export default function App() {
       if (errStr.includes('unauthorized-domain') || errMessage.includes('unauthorized-domain')) {
         setUnauthorizedDomainError(window.location.hostname);
       }
+      if (errStr.includes('operation-not-allowed') || errMessage.includes('operation-not-allowed')) {
+        setOperationNotAllowedError(true);
+      }
       triggerToast(`Gagal menghubungkan Google: ${err.message || err}`, 'error');
     } finally {
       setAuthLoading(false);
@@ -459,6 +464,7 @@ export default function App() {
       setGoogleUser(null);
       setGoogleToken(null);
       setUnauthorizedDomainError(null);
+      setOperationNotAllowedError(false);
       triggerToast('Koneksi Google diputuskan.', 'info');
       addActivity('Memutuskan Sesi Google Workspace');
     } catch (err: any) {
@@ -4325,40 +4331,149 @@ export default function App() {
                 ) : (
                   <div className="space-y-4">
                     {unauthorizedDomainError && (
-                      <div className="p-5 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-200 space-y-3 leading-relaxed animate-fadeIn">
+                      <div className="p-5 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-200 space-y-4 leading-relaxed animate-fadeIn">
                         <div className="flex items-center gap-2">
-                          <span className="font-black text-rose-455 uppercase tracking-widest block text-xs">💡 SOLUSI ERROR: auth/unauthorized-domain</span>
+                          <span className="font-black text-rose-400 uppercase tracking-widest block text-xs">💡 SOLUSI ERROR: auth/unauthorized-domain</span>
                         </div>
                         <p className="font-medium text-slate-300">
                           Domain web Anda saat ini belum diotorisasi dalam Firebase. Demi keamanan Google, proses masuk (SignIn Popup) hanya diizinkan bagi domain terdaftar.
                         </p>
+                        
                         <div className="bg-slate-950 p-4 rounded-xl border border-slate-850 space-y-2">
                           <p className="font-extrabold text-white text-[10px] uppercase tracking-wider">Langkah Mudah Penyelesaian:</p>
                           <ol className="list-decimal list-inside space-y-1.5 text-slate-400 font-bold ml-1">
-                            <li>Hubungi administrator atau buka <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Firebase Console</a> Anda.</li>
+                            <li>Buka <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Firebase Console Anda</a>.</li>
                             <li>Pilih proyek Firebase Anda (<span className="text-white font-mono bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">sipanda-9b16b</span>).</li>
                             <li>Buka menu <span className="text-indigo-400">Authentication</span> di sebelah kiri, lalu masuk ke tab <span className="text-indigo-400">Settings</span>.</li>
                             <li>Cari kolom <span className="text-indigo-400">Authorized Domains</span> di bagian bawah halaman.</li>
-                            <li>Klik <span className="text-white font-extrabold bg-slate-800 px-1.5 py-0.5 rounded text-[10px]">Add Domain</span>, lalu masukkan domain berikut ini:</li>
+                            <li>Klik <span className="text-white font-extrabold bg-slate-800 px-1.5 py-0.5 rounded text-[10px]">Add Domain</span>, lalu masukkan domain-domain berikut ini:</li>
                           </ol>
                         </div>
-                        <div className="flex flex-col sm:flex-row items-center gap-2 bg-slate-900 p-2.5 rounded-xl border border-slate-850 justify-between">
-                          <code className="text-[11px] font-mono font-black text-emerald-400 select-all break-all text-center sm:text-left">
-                            {unauthorizedDomainError}
-                          </code>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(unauthorizedDomainError);
-                              triggerToast('Domain disalin ke clipboard!', 'success');
-                            }}
-                            className="bg-indigo-600 hover:bg-indigo-500 text-white font-black text-[10px] px-3 py-1.5 rounded-lg active:scale-95 transition-transform shrink-0 cursor-pointer"
-                          >
-                            Salin Domain
-                          </button>
+
+                        {/* Domain List Container */}
+                        <div className="space-y-2">
+                          <p className="font-extrabold text-slate-300 text-[10px] uppercase tracking-wider">Daftar Istilah & Domain Yang Harus Ditambahkan:</p>
+                          
+                          {/* 1. Current Domain name */}
+                          <div className="bg-slate-900 p-3 rounded-xl border border-slate-850 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                            <div>
+                              <p className="font-extrabold text-white text-[11px]">1. Domain Aktif Saat Ini</p>
+                              <p className="text-[10px] text-slate-400 font-medium">Domain tempat Anda mengklik tombol saat ini.</p>
+                              <code className="text-[11px] font-mono font-black text-emerald-400 block mt-1 break-all">{unauthorizedDomainError}</code>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(unauthorizedDomainError);
+                                triggerToast('Domain aktif disalin!', 'success');
+                              }}
+                              className="bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-[10px] px-2.5 py-1.5 rounded-lg active:scale-95 transition-transform shrink-0 cursor-pointer"
+                            >
+                              Salin
+                            </button>
+                          </div>
+
+                          {/* 2. AI Studio Dev Domain if applicable */}
+                          <div className="bg-slate-900 p-3 rounded-xl border border-slate-850 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                            <div>
+                              <p className="font-extrabold text-white text-[11px]">2. Domain Preview AI Studio (Development & Shared)</p>
+                              <p className="text-[10px] text-slate-400 font-medium">Wajib agar login bekerja di layar preview editor Google AI Studio.</p>
+                              <div className="space-y-1 mt-1">
+                                <code className="text-[11px] font-mono font-black text-emerald-400 block break-all">ais-dev-3h5oljl46ztgnutpgrokyc-745106488165.asia-east1.run.app</code>
+                                <code className="text-[11px] font-mono font-black text-emerald-400 block break-all">ais-pre-3h5oljl46ztgnutpgrokyc-745106488165.asia-east1.run.app</code>
+                              </div>
+                            </div>
+                            <div className="flex flex-col gap-1.5 shrink-0 self-end sm:self-center">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText('ais-dev-3h5oljl46ztgnutpgrokyc-745106488165.asia-east1.run.app');
+                                  triggerToast('Domain Dev disalin!', 'success');
+                                }}
+                                className="bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-[9px] px-2.5 py-1.5 rounded-lg active:scale-95 transition-transform cursor-pointer"
+                              >
+                                Salin Dev
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText('ais-pre-3h5oljl46ztgnutpgrokyc-745106488165.asia-east1.run.app');
+                                  triggerToast('Domain Shared/Pre disalin!', 'success');
+                                }}
+                                className="bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-[9px] px-2.5 py-1.5 rounded-lg active:scale-95 transition-transform cursor-pointer"
+                              >
+                                Salin Pre
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* 3. Vercel Domain name */}
+                          <div className="bg-slate-900 p-3 rounded-xl border border-slate-850 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                            <div>
+                              <p className="font-extrabold text-white text-[11px]">3. Domain Vercel Anda (Production)</p>
+                              <p className="text-[10px] text-slate-400 font-medium">Wajib agar login bekerja ketika dibuka oleh pengguna luar melalui Vercel.</p>
+                              <div className="space-y-1 mt-1">
+                                <code className="text-[11px] font-mono font-black text-emerald-400 block break-all">sistem-informasi-08-06-2026.vercel.app</code>
+                                <code className="text-[11px] font-mono font-black text-emerald-400 block break-all">sistem-informasi-08-06-2026-ao8j.vercel.app</code>
+                              </div>
+                            </div>
+                            <div className="flex flex-col gap-1.5 shrink-0 self-end sm:self-center">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText('sistem-informasi-08-06-2026.vercel.app');
+                                  triggerToast('Domain Vercel 1 disalin!', 'success');
+                                }}
+                                className="bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-[9px] px-2.5 py-1.5 rounded-lg active:scale-95 transition-transform cursor-pointer"
+                              >
+                                Salin Vercel 1
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText('sistem-informasi-08-06-2026-ao8j.vercel.app');
+                                  triggerToast('Domain Vercel 2 disalin!', 'success');
+                                }}
+                                className="bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-[9px] px-2.5 py-1.5 rounded-lg active:scale-95 transition-transform cursor-pointer"
+                              >
+                                Salin Vercel 2
+                              </button>
+                            </div>
+                          </div>
                         </div>
+
                         <p className="text-[10px] text-slate-400 font-semibold italic">
-                          *Setelah ditambahkan, silakan muat ulang browser/halaman ini lalu klik tombol Hubungkan di bawah kembali.
+                          *Setelah semua domain di atas ditambahkan di Firebase Console, silakan muat ulang browser/halaman ini lalu klik tombol "HUBUNGKAN AKUN GOOGLE SEKARANG" kembali.
+                        </p>
+                      </div>
+                    )}
+
+                    {operationNotAllowedError && (
+                      <div className="p-5 rounded-2xl bg-amber-550/10 border border-amber-500/20 text-xs text-amber-200 space-y-4 leading-relaxed animate-fadeIn">
+                        <div className="flex items-center gap-2">
+                          <span className="font-black text-amber-400 uppercase tracking-widest block text-xs">💡 SOLUSI ERROR: auth/operation-not-allowed</span>
+                        </div>
+                        <p className="font-medium text-slate-300">
+                          Metode login "Google" belum diaktifkan dalam tab Authentication pada proyek Firebase Anda. Google melarang sistem login popup ini hingga Anda mengaktifkannya secara manual di konsol Firebase.
+                        </p>
+                        
+                        <div className="bg-slate-950 p-4 rounded-xl border border-slate-850 space-y-2">
+                          <p className="font-extrabold text-white text-[10px] uppercase tracking-wider">Langkah Mudah Mengaktifkan Google Login:</p>
+                          <ol className="list-decimal list-inside space-y-1.5 text-slate-400 font-bold ml-1">
+                            <li>Buka <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline font-black decoration-dotted">Firebase Console Anda</a>.</li>
+                            <li>Pilih proyek Firebase Anda (<span className="text-white font-mono bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">sipanda-9b16b</span>).</li>
+                            <li>Buka menu <span className="text-indigo-400 font-extrabold">Authentication</span> di sebelah kiri.</li>
+                            <li>Masuk ke tab <span className="text-indigo-400 font-extrabold">Sign-in method</span> di bagian atas halaman.</li>
+                            <li>Klik tombol <span className="text-white font-extrabold bg-indigo-650 px-2.5 py-1 rounded text-[10px] hover:bg-indigo-600 transition-colors cursor-pointer ml-1 inline-block">Add new provider</span> (atau klik "Google" jika sudah ada di daftar status disabled).</li>
+                            <li>Pilih penyedia <span className="text-white font-extrabold">Google</span>.</li>
+                            <li>Aktifkan saklar toggle (<span className="text-emerald-400 font-extrabold">Enable</span>) di kanan atas.</li>
+                            <li>Masukkan alamat <span className="text-indigo-400 font-black">Project support email</span> Anda (pilih email Anda: <code className="bg-slate-900 px-1.5 py-0.5 rounded text-white text-[11px] font-mono select-all border border-slate-800">meidipriandana@gmail.com</code>).</li>
+                            <li>Klik tombol <span className="text-white font-extrabold bg-emerald-600 px-2.5 py-1 rounded text-[10px] hover:bg-emerald-550 transition-colors cursor-pointer ml-1 inline-block">Save</span> / Simpan di bagian bawah halaman.</li>
+                          </ol>
+                        </div>
+                        
+                        <p className="text-[10px] text-slate-400 font-semibold italic">
+                          *Setelah diaktifkan di Firebase Console, silakan muat ulang browser/halaman ini lalu klik tombol "HUBUNGKAN AKUN GOOGLE SEKARANG" kembali.
                         </p>
                       </div>
                     )}
