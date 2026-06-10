@@ -37,7 +37,8 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  RotateCcw
+  RotateCcw,
+  ExternalLink
 } from 'lucide-react';
 
 import { 
@@ -6128,6 +6129,19 @@ export default function App() {
                     <Printer className="w-3.5 h-3.5" />
                     <span className="hidden sm:inline">Cetak</span>
                   </button>
+
+                  {/* Dynamic External Link Button to bypass any Iframe blocks */}
+                  <a 
+                    href={activePdfPreview.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-indigo-600/10 hover:bg-indigo-600 border border-indigo-500/20 hover:border-indigo-500 text-indigo-300 hover:text-white font-extrabold text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1.5 cursor-pointer transition-all shadow-md shadow-indigo-950/20"
+                    title="Buka dokumen secara langsung di Google Drive / Tab Baru untuk kemudahan edit atau cetak"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-indigo-400 group-hover:text-white" />
+                    <span>Buka Tab Baru</span>
+                  </a>
+
                   <div className="h-6 w-[1px] bg-slate-855 mx-1 hidden sm:block"></div>
                   <button 
                     onClick={() => {
@@ -6178,8 +6192,33 @@ export default function App() {
                       <div className="space-y-2 font-mono text-[11px] leading-relaxed text-slate-455">
                         <p>• Dokumen PDF ini terverifikasi secara lokal oleh Sistem Keuangan RSUD dr. H. Jusuf SK.</p>
                         <p>• Data dienkripsi dalam penyimpanan draf cache browser untuk akses real-time offline.</p>
-                        <p>• Kompatibel penuh dengan otorisasi sinkronisasi cloud Google Drive / Google Sheets.</p>
+                        <p>• Kompatibel penuh dengan otorisasi cloud Google Drive / Google Sheets.</p>
                       </div>
+
+                      {/* Informational Help Box for iframe context Google Drive block */}
+                      {activePdfPreview.url.includes('drive.google.com') && (
+                        <div className="mt-4 p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20 space-y-2.5 animate-fadeIn">
+                          <div className="flex items-center gap-1.5 text-indigo-400 font-extrabold text-[11px] uppercase tracking-wider">
+                            <span>💡</span>
+                            <span>TIPS AKSES GOOGLE DRIVE:</span>
+                          </div>
+                          <p className="text-[10px] text-slate-300 font-extrabold leading-relaxed">
+                            Jika bingkai sebelah kanan meminta otorisasi atau tampil pesan "You need access", hal ini normal terjadi karena kebijakan browser Anda menghalangi Google Suite mengenali login Anda melalui portal pihak ketiga (Third-Party Cookies).
+                          </p>
+                          <p className="text-[10px] text-slate-400 font-bold leading-normal">
+                            Dokumen Anda sudah terunggah dan aman di Drive Anda. Silakan klik tombol di bawah untuk membukanya secara langsung dengan akses penuh:
+                          </p>
+                          <a
+                            href={activePdfPreview.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center justify-center gap-1.5 w-full bg-indigo-650 hover:bg-indigo-600 text-white font-black text-[11.5px] py-2 px-3 rounded-xl active:scale-[0.98] transition-all cursor-pointer shadow-lg shadow-indigo-900/30"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                            <span>Buka di Google Drive Baru</span>
+                          </a>
+                        </div>
+                      )}
                     </div>
 
                     <div className="pt-4 border-t border-slate-855 flex flex-col sm:flex-row items-center justify-between gap-3 text-slate-505 text-[10px] uppercase font-bold tracking-wider">
@@ -6200,7 +6239,17 @@ export default function App() {
                   </div>
 
                   <iframe 
-                    src={activePdfPreview.url}
+                    src={activePdfPreview.url.includes('drive.google.com') ? (() => {
+                      const match = activePdfPreview.url.match(/\/file\/d\/([^/?]+)/);
+                      if (match && match[1]) {
+                        return `https://drive.google.com/file/d/${match[1]}/preview`;
+                      }
+                      const idParam = activePdfPreview.url.match(/[?&]id=([^&]+)/);
+                      if (idParam && idParam[1]) {
+                        return `https://drive.google.com/file/d/${idParam[1]}/preview`;
+                      }
+                      return activePdfPreview.url;
+                    })() : activePdfPreview.url}
                     className="w-full h-full relative z-10 border-none bg-slate-900"
                     title="PDF Live Browser Native Frame"
                   />
