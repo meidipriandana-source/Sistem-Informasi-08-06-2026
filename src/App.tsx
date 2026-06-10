@@ -116,22 +116,81 @@ export default function App() {
   const [showBludTooltip, setShowBludTooltip] = useState(false);
 
   // File states (Local or LocalStorage persistent)
-  const [telaahList, setTelaahList] = useState<GDriveItem[]>([]);
-  const [sertifikatList, setSertifikatList] = useState<GDriveItem[]>([]);
-  const [perjadinList, setPerjadinList] = useState<PerjadinItem[]>([]);
-  const [bludList, setBludList] = useState<BludItem[]>([]);
-  const [activities, setActivities] = useState<RecentActivity[]>([]);
-  const [googleConfig, setGoogleConfig] = useState<GoogleConfig>({
-    driveApiKey: '',
-    driveClientId: '',
-    driveFolderId: DEFAULT_DRIVE_FOLDER_ID,
-    sheetsApiKey: '',
-    sheetsId: DEFAULT_SHEETS_SPREADSHEET_ID,
-    sheetsName: 'Sheet1'
+  const [telaahList, setTelaahList] = useState<GDriveItem[]>(() => {
+    try {
+      const stored = localStorage.getItem('app_telaah');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [sertifikatList, setSertifikatList] = useState<GDriveItem[]>(() => {
+    try {
+      const stored = localStorage.getItem('app_sertifikat');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [perjadinList, setPerjadinList] = useState<PerjadinItem[]>(() => {
+    try {
+      const stored = localStorage.getItem('app_perjadin');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [bludList, setBludList] = useState<BludItem[]>(() => {
+    try {
+      const stored = localStorage.getItem('app_blud');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [activities, setActivities] = useState<RecentActivity[]>(() => {
+    try {
+      const stored = localStorage.getItem('app_activities');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [googleConfig, setGoogleConfig] = useState<GoogleConfig>(() => {
+    try {
+      const stored = localStorage.getItem('app_google_config');
+      if (stored) {
+        const config = JSON.parse(stored);
+        if (!config.sheetsId || config.sheetsId === '1T8QxUuWna4T-YV7wPiYQendHGhmAgy13tXlYRm7P1mw') {
+          config.sheetsId = DEFAULT_SHEETS_SPREADSHEET_ID;
+        }
+        if (!config.driveFolderId || config.driveFolderId === '1dUcuP_LownZK-q6Cd4ecg94T9ZggHGXX') {
+          config.driveFolderId = DEFAULT_DRIVE_FOLDER_ID;
+        }
+        return config;
+      }
+    } catch (e) {
+      console.error('Failed to parse app_google_config from localStorage:', e);
+    }
+    return {
+      driveApiKey: '',
+      driveClientId: '',
+      driveFolderId: DEFAULT_DRIVE_FOLDER_ID,
+      sheetsApiKey: '',
+      sheetsId: DEFAULT_SHEETS_SPREADSHEET_ID,
+      sheetsName: 'Sheet1'
+    };
   });
 
   // APBD Input Grid
-  const [apbdInputs, setApbdInputs] = useState<APBDMonthlyInputValues>({});
+  const [apbdInputs, setApbdInputs] = useState<APBDMonthlyInputValues>(() => {
+    try {
+      const stored = localStorage.getItem('app_apbd_inputs');
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
 
   // Active Session PDF list (documents in current session)
   const [uploadedPdfs, setUploadedPdfs] = useState<Array<{ id: string, name: string, size: string, date: string, url: string }>>([]);
@@ -533,57 +592,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // Load from local storage
-    const storedTelaah = localStorage.getItem('app_telaah');
-    const storedSertifikat = localStorage.getItem('app_sertifikat');
-    const storedPerjadin = localStorage.getItem('app_perjadin');
-    const storedBlud = localStorage.getItem('app_blud');
-    const storedInputs = localStorage.getItem('app_apbd_inputs');
-    const storedConfig = localStorage.getItem('app_google_config');
-    const storedActivities = localStorage.getItem('app_activities');
-
-    if (storedTelaah) setTelaahList(JSON.parse(storedTelaah));
-    else setTelaahList([]);
-
-    if (storedSertifikat) setSertifikatList(JSON.parse(storedSertifikat));
-    else setSertifikatList([]);
-
-    if (storedPerjadin) setPerjadinList(JSON.parse(storedPerjadin));
-    else setPerjadinList([]);
-
-    if (storedBlud) setBludList(JSON.parse(storedBlud));
-    else setBludList([]);
-
-    if (storedInputs) setApbdInputs(JSON.parse(storedInputs));
-    else setApbdInputs({});
-
-    if (storedActivities) setActivities(JSON.parse(storedActivities));
-    else setActivities([]);
-
-    if (storedConfig) {
-      const config = JSON.parse(storedConfig);
-      // Fallback sheetsId to our updated default if not defined, otherwise load saved
-      if (!config.sheetsId || config.sheetsId === '1T8QxUuWna4T-YV7wPiYQendHGhmAgy13tXlYRm7P1mw') {
-        config.sheetsId = DEFAULT_SHEETS_SPREADSHEET_ID;
-      }
-      if (!config.driveFolderId || config.driveFolderId === '1dUcuP_LownZK-q6Cd4ecg94T9ZggHGXX') {
-        config.driveFolderId = DEFAULT_DRIVE_FOLDER_ID;
-      }
-      setGoogleConfig(config);
-    } else {
-      setGoogleConfig({
-        driveApiKey: '',
-        driveClientId: '',
-        driveFolderId: DEFAULT_DRIVE_FOLDER_ID,
-        sheetsApiKey: '',
-        sheetsId: DEFAULT_SHEETS_SPREADSHEET_ID,
-        sheetsName: 'Sheet1'
-      });
-    }
-
-    setTimeout(() => {
-      isInitialLoadFinished.current = true;
-    }, 1200);
+    isInitialLoadFinished.current = true;
   }, []);
 
   // Save changes to localStorage on any state modification
@@ -909,13 +918,6 @@ export default function App() {
     const fileArray = Array.from(files);
     if (fileArray.length === 0) return;
 
-    // Check if we are logged in to Google Workspace
-    if (!googleUser || !googleToken) {
-      triggerToast('Silakan hubungkan akun Google Workspace Anda di tab Pengaturan terlebih dahulu untuk mengunggah ke Google Drive.', 'error');
-      showSection('settings');
-      return;
-    }
-
     setIsUploading(prev => ({ ...prev, [category]: true }));
     setUploadProgress(prev => ({ ...prev, [category]: 10 }));
 
@@ -927,17 +929,16 @@ export default function App() {
       const sheetName = googleConfig.sheetsName || 'Sheet1';
 
       const uploadedItems: GDriveItem[] = [];
+      const isGoogleConnected = !!(googleUser && googleToken);
+
+      if (!isGoogleConnected) {
+        triggerToast('Gunakan penyimpanan simulasi lokal (Akun Google belum terhubung)', 'info');
+      }
 
       for (let i = 0; i < fileArray.length; i++) {
         const file = fileArray[i];
         
-        // 1. Upload to Google Drive
-        const progressChunk = 30 + Math.floor((40 / fileArray.length) * i);
-        setUploadProgress(prev => ({ ...prev, [category]: progressChunk }));
-        
-        const driveRes = await uploadFileToDrive(file, folderId);
-        
-        // 2. Prepare metadata
+        // Prepare metadata
         const sizeString = file.size < 1024 
           ? `${file.size} B` 
           : file.size < 1048576 
@@ -946,33 +947,53 @@ export default function App() {
             
         const dateString = new Date().toISOString().split('T')[0];
         
+        let driveLink = '';
+        let fileId = `${category}-${Date.now()}-${i}`;
+        
+        if (isGoogleConnected) {
+          try {
+            // Try uploading to Google Drive
+            const progressChunk = 30 + Math.floor((40 / fileArray.length) * i);
+            setUploadProgress(prev => ({ ...prev, [category]: progressChunk }));
+            
+            const driveRes = await uploadFileToDrive(file, folderId);
+            driveLink = driveRes.webViewLink || `https://drive.google.com/file/d/${driveRes.id}/view`;
+            fileId = driveRes.id || fileId;
+
+            // Sync metadata to Google Sheets
+            try {
+              await appendPdfToGoogleSheets(sheetsId, sheetName, {
+                id: fileId,
+                name: file.name,
+                size: sizeString,
+                date: dateString,
+                category,
+                driveLink: driveLink
+              });
+            } catch (sheetsErr: any) {
+              console.error('Failed to append upload info to Google Sheets, but continuing...', sheetsErr);
+              triggerToast(`Berkas "${file.name}" berhasil terunggah ke Google Drive, namun sinkronisasi Sheets gagal.`, 'info');
+            }
+          } catch (uploadErr: any) {
+            console.error('Real GDrive upload failed, falling back to local simulation:', uploadErr);
+            triggerToast(`Gagal mengunggah "${file.name}" ke Google Drive: ${uploadErr.message || uploadErr}. Menggunakan penyimpanan simulasi lokal.`, 'info');
+            driveLink = URL.createObjectURL(file);
+          }
+        } else {
+          // Local simulation mode using object URL
+          driveLink = URL.createObjectURL(file);
+        }
+
         const newItem: GDriveItem = {
-          id: driveRes.id || `${category}-${Date.now()}-${i}`,
+          id: fileId,
           name: file.name,
           size: sizeString,
           date: dateString,
-          driveLink: driveRes.webViewLink || `https://drive.google.com/file/d/${driveRes.id}/view`,
+          driveLink,
           category,
           certType: category === 'sertifikat' ? sertifikatSubTab : undefined,
           expiryDate: ''
         };
-        
-        // 3. Sync to Google Sheets
-        setUploadProgress(prev => ({ ...prev, [category]: progressChunk + 10 }));
-        
-        try {
-          await appendPdfToGoogleSheets(sheetsId, sheetName, {
-            id: newItem.id,
-            name: newItem.name,
-            size: newItem.size,
-            date: newItem.date,
-            category: newItem.category,
-            driveLink: newItem.driveLink
-          });
-        } catch (sheetsErr: any) {
-          console.error('Failed to append upload info to Google Sheets, but continuing...', sheetsErr);
-          triggerToast('Berkas berhasil terunggah ke Google Drive, namun pencatatan otomatis ke Google Sheets gagal. Mohon periksa ID Spreadsheet Anda di Pengaturan.', 'info');
-        }
 
         uploadedItems.push(newItem);
       }
@@ -994,13 +1015,19 @@ export default function App() {
         setPerjadinList(prev => [...addedPerjadin, ...prev]);
       }
 
-      triggerToast(`${fileArray.length} file berhasil diunggah ke Google Drive & tercatat di Google Sheets!`, 'success');
-      addActivity(`Unggah ${fileArray.length} file PDF ke Google Drive & Sinkron ke Sheets - Kategori: ${category}`);
-      setSaveStatus(`Tersimpan ke Drive`);
+      if (isGoogleConnected) {
+        triggerToast(`${fileArray.length} file berhasil diunggah ke Google Drive & tercata di Google Sheets!`, 'success');
+        addActivity(`Unggah ${fileArray.length} file PDF ke Google Drive - Kategori: ${category}`);
+        setSaveStatus(`Tersimpan ke Drive`);
+      } else {
+        triggerToast(`${fileArray.length} file berhasil disandbox & disimpan lokal!`, 'success');
+        addActivity(`Unggah lokal ${fileArray.length} file PDF - Kategori: ${category}`);
+        setSaveStatus(`Tersimpan Lokal`);
+      }
 
     } catch (error: any) {
-      console.error('File GDrive upload & sync error:', error);
-      triggerToast(`Gagal mengunggah file: ${error.message || error}`, 'error');
+      console.error('File upload general error:', error);
+      triggerToast(`Gagal memproses file upload: ${error.message || error}`, 'error');
     } finally {
       setIsUploading(prev => ({ ...prev, [category]: false }));
       setUploadProgress(prev => ({ ...prev, [category]: 0 }));
