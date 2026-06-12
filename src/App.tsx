@@ -5,6 +5,9 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { ResponsiveContainer, ComposedChart, BarChart, Bar, LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell } from 'recharts';
 import { 
   LayoutDashboard, 
   FileText, 
@@ -251,6 +254,316 @@ export default function App() {
   const [selectedPerjadin, setSelectedPerjadin] = useState<string[]>([]);
   const [selectedBlud, setSelectedBlud] = useState<string[]>([]);
 
+  // States for Print Helper and Sandbox warning
+  const [showPrintGuideModal, setShowPrintGuideModal] = useState<boolean>(false);
+  const [printModuleName, setPrintModuleName] = useState<string>('');
+  const [printElementId, setPrintElementId] = useState<string>('');
+  const [printCategoryOption, setPrintCategoryOption] = useState<'current' | 'blud' | 'apbd'>('current');
+
+  const executePrintLogic = (moduleName: string, elementId?: string) => {
+    try {
+      let printElement = null;
+      if (elementId) {
+        printElement = document.getElementById(elementId);
+      }
+      
+      if (!printElement) {
+        if (activeSection === 'anggaran') {
+          printElement = document.getElementById(activeAnggaranTab === 'blud' ? 'tab-blud' : 'tab-apbd');
+        } else {
+          printElement = document.getElementById(`section-${activeSection}`);
+        }
+      }
+      
+      if (!printElement) {
+        printElement = document.getElementById('section-scroller') || document.body;
+      }
+
+      // Aggressive HTML Pre-processing & Sanitization for Official Clean Print Output on F4 Page
+      const cleanElement = printElement.cloneNode(true) as HTMLElement;
+
+      // 1. Completely strip out elements marked with the "no-print" helper class
+      cleanElement.querySelectorAll('.no-print').forEach((el) => el.remove());
+
+      // 2. Programmatically purge all dynamic buttons, controls, select forms, file uploads, and active state switchers
+      cleanElement.querySelectorAll('button, select, input, textarea, form, iframe, progress, [role="tablist"]').forEach((el) => el.remove());
+
+      // 3. Purge action trigger columns (e.g. headers and rows labeled "Aksi", "Action", "Detail", "Edit", "Opsi", etc.)
+      cleanElement.querySelectorAll('th, td').forEach((cell) => {
+        const c = cell as HTMLElement;
+        const txt = c.textContent?.trim().toLowerCase() || '';
+        if (txt === 'aksi' || txt === 'action' || txt === 'tindakan' || txt === 'opsi' || txt === 'edit' || txt === 'hapus' || txt === 'pilihan') {
+          c.remove();
+        }
+        // Force fully flat positions so sticky grids do not compile overlapping shadows or gaps on physical paper
+        c.style.position = 'static';
+        c.style.left = 'auto';
+        c.style.right = 'auto';
+        c.style.zIndex = 'auto';
+        c.style.boxShadow = 'none';
+        c.style.textShadow = 'none';
+        c.style.backgroundColor = 'transparent';
+      });
+
+      // 4. Reset table responsive wrapper styles and eliminate fixed inline minimum widths
+      cleanElement.querySelectorAll('table').forEach((table) => {
+        const t = table as HTMLElement;
+        t.style.minWidth = '100%';
+        t.style.width = '100%';
+        t.style.tableLayout = 'fixed';
+        t.style.borderCollapse = 'collapse';
+        t.style.borderSpacing = '0';
+        t.removeAttribute('width');
+      });
+
+      // 5. Remove any interactive file upload dropzones, status badges, or action toolbars
+      cleanElement.querySelectorAll('[class*="border-dashed"], [class*="dropzone"], [class*="drag-and-drop"]').forEach((el) => el.remove());
+
+      // 6. Purge SVGs, social indicators, icons, charts, and canvas visualizations
+      cleanElement.querySelectorAll('svg, canvas, iframe, audio, video').forEach((el) => el.remove());
+
+      // 7. Strip out dark-themed background styles & color utility classes to allow pure white background ink conversion
+      cleanElement.querySelectorAll('*').forEach((el) => {
+        const e = el as HTMLElement;
+        if (e.removeAttribute) {
+          // Remove custom transitions, layout effects and dark mode gradients
+          e.style.backgroundImage = 'none';
+          e.style.boxShadow = 'none';
+        }
+      });
+
+      const win = window.open('', '_blank');
+      if (!win) {
+        triggerToast('Gagal membuka popup cetak otomatis. Menggunakan mode cetak standar...', 'info');
+        window.focus();
+        window.print();
+        return;
+      }
+
+      let cssStyles = '';
+      try {
+        for (let i = 0; i < document.styleSheets.length; i++) {
+          const sheet = document.styleSheets[i];
+          try {
+            for (let j = 0; sheet.cssRules && j < sheet.cssRules.length; j++) {
+              cssStyles += sheet.cssRules[j].cssText + '\n';
+            }
+          } catch (e) {
+            // ignore cross-origin stylesheet errors
+          }
+        }
+      } catch (err) {
+        console.error(err);
+      }
+
+      cssStyles += `
+        @media print {
+          @page {
+            size: 330mm 215mm; /* Exact standard F4 / Folio Landscape size */
+            margin: 8mm 10mm !important;
+          }
+          body {
+            background-color: #ffffff !important;
+            color: #000000 !important;
+            font-family: "Inter", system-ui, -apple-system, sans-serif !important;
+            padding: 8px !important;
+            margin: 0 !important;
+            width: 100% !important;
+            zoom: 82% !important; /* Perfect zoom adjustment for dense wide reports on F4 */
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+        }
+        .no-print, button, .btn, .no-print *, button *, .btn *, select, input, form, [role="tablist"] {
+          display: none !important;
+          height: 0 !important;
+          width: 0 !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          border: none !important;
+        }
+        div[class*="bg-slate-"], div[class*="bg-indigo-"], div[class*="bg-purple-"], div[class*="bg-emerald-"], div[class*="bg-white"], div[class*="bg-rose-"], div[class*="bg-950"], div[class*="bg-900"], div[class*="bg-gradient-"], div[class*="from-"], div[class*="to-"], div[class*="via-"], .bg-gradient-to-br, [class*="bg-gradient-"] {
+          background: #ffffff !important;
+          background-image: none !important;
+          background-color: #ffffff !important;
+          color: #000000 !important;
+          box-shadow: none !important;
+        }
+        .card, .header-card, .info-grid > div {
+          border: 1px solid #94a3b8 !important;
+          background: #ffffff !important;
+          background-color: #ffffff !important;
+          border-radius: 8px !important;
+          padding: 10px !important;
+          margin: 6px 0 !important;
+          box-shadow: none !important;
+        }
+        canvas, .chart-container, svg, .animate-pulse {
+          display: none !important;
+        }
+        h1, h2, h3, h4, h5, h6, span, p, text, label, strong, th, td, div {
+          color: #000000 !important;
+          text-shadow: none !important;
+        }
+        .text-indigo-400, .text-indigo-600, .text-indigo-650 { color: #1e3a8a !important; font-weight: 850 !important; }
+        .text-purple-400, .text-purple-600, .text-purple-650 { color: #4c1d95 !important; font-weight: 850 !important; }
+        .text-emerald-400, .text-emerald-600, .text-emerald-700 { color: #064e3b !important; font-weight: 850 !important; }
+        .text-rose-450, .text-rose-500, .text-rose-600 { color: #7f1d1d !important; font-weight: 850 !important; text-decoration: underline !important; }
+        .text-slate-400, .text-slate-500, .text-slate-600 { color: #1e293b !important; }
+        
+        table {
+          width: 100% !important;
+          min-width: 100% !important;
+          border-collapse: collapse !important;
+          margin-top: 10px !important;
+          margin-bottom: 20px !important;
+          background: #ffffff !important;
+          table-layout: fixed !important;
+        }
+        th, td {
+          padding: 6px 8px !important;
+          border: 1px solid #475569 !important; /* darker borders for high quality contrast on printing paper */
+          font-size: 8.5px !important;
+          color: #000000 !important;
+          text-align: left !important;
+          word-wrap: break-word !important;
+          word-break: break-all !important;
+          white-space: normal !important;
+        }
+        th {
+          background-color: #f1f5f9 !important;
+          font-weight: 800 !important;
+          text-transform: uppercase !important;
+        }
+        td select, td input {
+          border: none !important;
+          background: transparent !important;
+          padding: 0 !important;
+          appearance: none !important;
+          color: #000000 !important;
+          pointer-events: none !important;
+          font-weight: 700 !important;
+        }
+        tr {
+          page-break-inside: avoid !important;
+        }
+
+        /* Specialized Beautiful Layout for APBD Landscape Matrix Table to Avoid Squishing */
+        .budget-table {
+          width: 100% !important;
+          min-width: 100% !important;
+          table-layout: fixed !important;
+          border-collapse: collapse !important;
+          background-color: #ffffff !important;
+        }
+        .budget-table th, .budget-table td {
+          font-size: 7.5px !important;
+          padding: 5px 4px !important;
+          border: 1px solid #475569 !important;
+          word-wrap: break-word !important;
+          word-break: break-all !important;
+          white-space: normal !important;
+        }
+        .budget-table th {
+          font-size: 7.5px !important;
+          font-weight: 950 !important;
+          background-color: #e2e8f0 !important;
+          color: #000000 !important;
+          text-align: center !important;
+          white-space: normal !important;
+          padding: 6px 3px !important;
+        }
+        .budget-table th:nth-child(1), .budget-table td:nth-child(1) {
+          width: 6.5% !important;
+          text-align: center !important;
+          font-weight: 800 !important;
+        }
+        .budget-table th:nth-child(2), .budget-table td:nth-child(2) {
+          width: 19% !important;
+          text-align: left !important;
+          white-space: normal !important;
+          font-weight: 800 !important;
+        }
+        .budget-table th:nth-child(3), .budget-table td:nth-child(3) {
+          width: 9% !important;
+          text-align: right !important;
+          font-weight: 800 !important;
+        }
+        /* 12 months (col 4 to col 15) equal split: 50% total width (4.16% each) */
+        .budget-table th:nth-child(n+4):nth-child(-n+15), 
+        .budget-table td:nth-child(n+4):nth-child(-n+15) {
+          width: 4.16% !important;
+          text-align: right !important;
+        }
+        .budget-table th:nth-child(16), .budget-table td:nth-child(16) {
+          width: 7.5% !important;
+          text-align: right !important;
+          font-weight: bold !important;
+        }
+        .budget-table th:nth-child(17), .budget-table td:nth-child(17) {
+          width: 8% !important;
+          text-align: right !important;
+          font-weight: bold !important;
+        }
+      `;
+
+      win.document.open();
+      win.document.write(`
+        <!DOCTYPE html>
+        <html class="${theme}">
+          <head>
+            <title>${moduleName}</title>
+            <style>${cssStyles}</style>
+          </head>
+          <body>
+            <!-- Official Kop Surat Header for Web Printing -->
+            <div style="border-bottom: 3px double #000000; padding-bottom: 12px; margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
+              <div style="display: flex; align-items: center; gap: 15px;">
+                <!-- RSUD Circular Shield Emblem -->
+                <div style="width: 50px; height: 50px; border: 2.5px solid #16a34a; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #1e3a8a; box-sizing: border-box; flex-shrink: 0;">
+                  <div style="font-size: 7px; font-weight: 900; color: #fbbf24; font-family: sans-serif;">KALTARA</div>
+                  <div style="font-size: 11px; font-weight: 900; color: #ffffff; line-height: 1.1; margin-top: -2px; font-family: sans-serif;">RSUD</div>
+                  <div style="font-size: 6px; font-weight: 900; color: #fbbf24; line-height: 1; font-family: sans-serif;">JUSUF SK</div>
+                </div>
+                <div>
+                  <h2 style="font-size: 11px; font-weight: 800; margin: 0; color: #000000; text-transform: uppercase; font-family: sans-serif;">PEMERINTAH PROVINSI KALIMANTAN UTARA</h2>
+                  <h1 style="font-size: 16px; font-weight: 900; margin: 1px 0; color: #1e3a8a; font-family: sans-serif;">RSUD dr. H. JUSUF SK</h1>
+                  <p style="font-size: 8.5px; color: #475569; margin: 0; font-weight: 600; font-family: sans-serif;">Jl. Ki Hajar Dewantara No. 1 Tarakan, Kalimantan Utara | Telp: (0551) 21166</p>
+                  <p style="font-size: 8px; color: #64748b; margin: 0; font-family: sans-serif;">Email: rsud.jusufsk@kaltaraprov.go.id | Website: rsudjusufsk.kaltaraprov.go.id</p>
+                </div>
+              </div>
+              <div style="text-align: right; font-family: sans-serif;">
+                <span style="font-size: 8px; font-weight: 800; padding: 4px 8px; background-color: #f1f5f9; border: 1.5px solid #cbd5e1; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px;">LAPORAN PRINT F4</span>
+                <p style="font-size: 8px; color: #475569; margin: 5px 0 0 0; font-weight: bold;">Tgl Cetak: ${new Date().toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}</p>
+              </div>
+            </div>
+            <div style="width: 100% !important; margin: 0 !important; padding: 0 !important;">
+              ${cleanElement.innerHTML}
+            </div>
+          </body>
+        </html>
+      `);
+      win.document.close();
+
+      setTimeout(() => {
+        win.focus();
+        win.print();
+      }, 600);
+
+    } catch (e) {
+      console.error("Print layout injection failed, resorting to native fallback", e);
+      window.focus();
+      window.print();
+    }
+  };
+
+  const initiatePrint = (moduleName: string, elementId?: string) => {
+    setPrintModuleName(moduleName);
+    setPrintElementId(elementId || '');
+    setPrintCategoryOption('current');
+    setShowPrintGuideModal(true);
+  };
+
   // Theme state
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     return (localStorage.getItem('app_theme') as 'dark' | 'light') || 'dark';
@@ -276,7 +589,14 @@ export default function App() {
   // High-fidelity BLUD State
   const [bludTabMode, setBludTabMode] = useState<'integrated' | 'original'>('integrated');
   const [bludSubTab, setBludSubTab] = useState<'monitoring' | 'rekap_kontribusi' | 'perjalanan_dinas' | 'makan_minum' | 'honorarium'>('monitoring');
+  const [bludChartTab, setBludChartTab] = useState<'monthly' | 'triwulan' | 'items' | 'categories'>('triwulan');
   const [selectedRekapMonth, setSelectedRekapMonth] = useState<number>(0);
+
+  // High-fidelity APBD Sub-Tab State
+  const [apbdTabMode, setApbdTabMode] = useState<'integrated' | 'original'>('integrated');
+  const [apbdSubTab, setApbdSubTab] = useState<'monitoring' | 'rekap_kontribusi' | 'perjalanan_dinas' | 'makan_minum' | 'honorarium'>('monitoring');
+  const [selectedApbdMonth, setSelectedApbdMonth] = useState<number>(0);
+  const [apbdSearchQuery, setApbdSearchQuery] = useState<string>('');
 
   // Schema for each month row of target category
   interface RekapTableRow {
@@ -319,6 +639,12 @@ export default function App() {
   const [rekapMakanMinum, setRekapMakanMinum] = useState<Record<number, RekapTableRow[]>>(() => loadRekapData('makanMinumData_'));
   const [rekapHonorarium, setRekapHonorarium] = useState<Record<number, RekapTableRow[]>>(() => loadRekapData('honorariumData_'));
 
+  // High-fidelity APBD Rekap States
+  const [apbdRekapKontribusi, setApbdRekapKontribusi] = useState<Record<number, RekapTableRow[]>>(() => loadRekapData('apbd_rekapPerjadinData_'));
+  const [apbdRekapPerjalanan, setApbdRekapPerjalanan] = useState<Record<number, RekapTableRow[]>>(() => loadRekapData('apbd_perjalananDinasData_'));
+  const [apbdRekapMakanMinum, setApbdRekapMakanMinum] = useState<Record<number, RekapTableRow[]>>(() => loadRekapData('apbd_makanMinumData_'));
+  const [apbdRekapHonorarium, setApbdRekapHonorarium] = useState<Record<number, RekapTableRow[]>>(() => loadRekapData('apbd_honorariumData_'));
+
   const mappingKeteranganToItemIndex: Record<string, number> = {
     'Nasi Kotak Biasa': 0, 
     'Snack Ringan Kotak': 1, 
@@ -331,6 +657,39 @@ export default function App() {
     'Perjalanan Dinas Untuk Akreditasi/Prognas': 8, 
     'Perjalanan Dinas Untuk Dokter Spesialis, Fellow dan Konsultan': 9
   };
+
+  // Recursively flatten the Budget Detail Structure
+  const flatBudgetRows = useMemo(() => {
+    const flatten = (
+      nodes: BudgetDetailNode[],
+      parentId: string | null = null,
+      counter = { val: 0 }
+    ): FlatBudgetRow[] => {
+      let flat: FlatBudgetRow[] = [];
+      for (const node of nodes) {
+        const id = `row-${counter.val++}`;
+        const isCat = !!(node.children && node.children.length > 0);
+        const rowEntry: FlatBudgetRow = {
+          id,
+          parentId,
+          code: node.code,
+          name: node.name,
+          budget: node.budget,
+          level: node.level,
+          isCat,
+          childrenIds: []
+        };
+        flat.push(rowEntry);
+        if (node.children && node.children.length > 0) {
+          const childRows = flatten(node.children, id, counter);
+          rowEntry.childrenIds = childRows.filter(c => c.parentId === id).map(c => c.id);
+          flat = flat.concat(childRows);
+        }
+      }
+      return flat;
+    };
+    return flatten(budgetData);
+  }, []);
 
   const calculatedBludMonthlyValues = useMemo(() => {
     const matrix: number[][] = Array(10).fill(null).map(() => Array(12).fill(0));
@@ -355,7 +714,48 @@ export default function App() {
     return matrix;
   }, [rekapKontribusi, rekapPerjalanan, rekapMakanMinum, rekapHonorarium]);
 
-  // Auto-save rekap states
+  // High-fidelity APBD Real-time Account Mapping matrix
+  const calculatedApbdMonthlyValues = useMemo(() => {
+    const matrix: Record<string, Record<string, number>> = {};
+    
+    // Initialize matrix with zeros for all leaf nodes in APBD
+    flatBudgetRows.forEach(row => {
+      if (!row.isCat) {
+        matrix[row.id] = {
+          jan: 0, feb: 0, mar: 0, apr: 0, mei: 0, jun: 0,
+          jul: 0, agu: 0, sep: 0, okt: 0, nov: 0, des: 0
+        };
+      }
+    });
+
+    const processCategoryData = (data: Record<number, RekapTableRow[]>) => {
+      for (let m = 0; m < 12; m++) {
+        const rows = data[m] || [];
+        const monthKey = MONTHS_KEY[m];
+        rows.forEach(row => {
+          const ket = row.kolom6; // Selected mapping account description
+          const valStr = row.kolom4 || '0';
+          const rawVal = parseFloat(valStr.replace(/[^0-9]/g, '')) || 0;
+          if (ket) {
+            // Match corresponding leaf row in APBD
+            const matchedRow = flatBudgetRows.find(bRow => !bRow.isCat && bRow.name === ket);
+            if (matchedRow && matrix[matchedRow.id]) {
+              matrix[matchedRow.id][monthKey] += rawVal;
+            }
+          }
+        });
+      }
+    };
+
+    processCategoryData(apbdRekapKontribusi);
+    processCategoryData(apbdRekapPerjalanan);
+    processCategoryData(apbdRekapMakanMinum);
+    processCategoryData(apbdRekapHonorarium);
+
+    return matrix;
+  }, [flatBudgetRows, apbdRekapKontribusi, apbdRekapPerjalanan, apbdRekapMakanMinum, apbdRekapHonorarium]);
+
+  // Auto-save rekap states (BLUD)
   useEffect(() => {
     for (let m = 0; m < 12; m++) {
       localStorage.setItem(`rekapPerjadinData_${m}`, JSON.stringify(rekapKontribusi[m] || []));
@@ -379,6 +779,31 @@ export default function App() {
       localStorage.setItem(`honorariumData_${m}`, JSON.stringify(rekapHonorarium[m] || []));
     }
   }, [rekapHonorarium]);
+
+  // Auto-save rekap states (APBD)
+  useEffect(() => {
+    for (let m = 0; m < 12; m++) {
+      localStorage.setItem(`apbd_rekapPerjadinData_${m}`, JSON.stringify(apbdRekapKontribusi[m] || []));
+    }
+  }, [apbdRekapKontribusi]);
+
+  useEffect(() => {
+    for (let m = 0; m < 12; m++) {
+      localStorage.setItem(`apbd_perjalananDinasData_${m}`, JSON.stringify(apbdRekapPerjalanan[m] || []));
+    }
+  }, [apbdRekapPerjalanan]);
+
+  useEffect(() => {
+    for (let m = 0; m < 12; m++) {
+      localStorage.setItem(`apbd_makanMinumData_${m}`, JSON.stringify(apbdRekapMakanMinum[m] || []));
+    }
+  }, [apbdRekapMakanMinum]);
+
+  useEffect(() => {
+    for (let m = 0; m < 12; m++) {
+      localStorage.setItem(`apbd_honorariumData_${m}`, JSON.stringify(apbdRekapHonorarium[m] || []));
+    }
+  }, [apbdRekapHonorarium]);
 
   // Form states
   const [perjadinForm, setPerjadinForm] = useState({ bulan: '', tujuan: '', fileName: '' });
@@ -634,39 +1059,6 @@ export default function App() {
     triggerLocalSync();
   }, [googleConfig]);
 
-  // Recursively flatten the Budget Detail Structure
-  const flatBudgetRows = useMemo(() => {
-    const flatten = (
-      nodes: BudgetDetailNode[],
-      parentId: string | null = null,
-      counter = { val: 0 }
-    ): FlatBudgetRow[] => {
-      let flat: FlatBudgetRow[] = [];
-      for (const node of nodes) {
-        const id = `row-${counter.val++}`;
-        const isCat = !!(node.children && node.children.length > 0);
-        const rowEntry: FlatBudgetRow = {
-          id,
-          parentId,
-          code: node.code,
-          name: node.name,
-          budget: node.budget,
-          level: node.level,
-          isCat,
-          childrenIds: []
-        };
-        flat.push(rowEntry);
-        if (node.children && node.children.length > 0) {
-          const childRows = flatten(node.children, id, counter);
-          rowEntry.childrenIds = childRows.filter(c => c.parentId === id).map(c => c.id);
-          flat = flat.concat(childRows);
-        }
-      }
-      return flat;
-    };
-    return flatten(budgetData);
-  }, []);
-
   // Compute calculated sums dynamically in reverse hierarchical order
   const calculatedBudgetSums = useMemo(() => {
     const memoSums: Record<string, number> = {};
@@ -675,8 +1067,14 @@ export default function App() {
       const r = flatBudgetRows.find(item => item.id === rowId);
       if (!r) return 0;
       if (!r.isCat) {
-        const monthsObj = apbdInputs[rowId] || {};
-        const sum: number = Object.values(monthsObj).reduce((acc: number, current: any) => acc + (Number(current) || 0), 0) as number;
+        let sum = 0;
+        if (apbdTabMode === 'integrated') {
+          const monthsObj = calculatedApbdMonthlyValues[rowId] || {};
+          sum = Object.values(monthsObj).reduce((acc: number, current: any) => acc + (Number(current) || 0), 0) as number;
+        } else {
+          const monthsObj = apbdInputs[rowId] || {};
+          sum = Object.values(monthsObj).reduce((acc: number, current: any) => acc + (Number(current) || 0), 0) as number;
+        }
         memoSums[rowId] = sum;
         return sum;
       } else {
@@ -695,13 +1093,29 @@ export default function App() {
     });
 
     return memoSums;
-  }, [flatBudgetRows, apbdInputs]);
+  }, [flatBudgetRows, apbdInputs, calculatedApbdMonthlyValues, apbdTabMode]);
 
   // Total Realisasi across APBD tab
   const totalAPBDRealisasi = useMemo(() => {
     const topLevelRowId = 'row-0'; // "BELANJA DAERAH" root
     return calculatedBudgetSums[topLevelRowId] || 0;
   }, [calculatedBudgetSums]);
+
+  // Dynamic monthly realisasi sums across leaf items of APBD
+  const calculatedApbdMonthlySums = useMemo(() => {
+    const sums = Array(12).fill(0);
+    flatBudgetRows.forEach(row => {
+      if (!row.isCat) {
+        MONTHS_KEY.forEach((m, idx) => {
+          const val = apbdTabMode === 'integrated'
+            ? (calculatedApbdMonthlyValues[row.id]?.[m] || 0)
+            : (apbdInputs[row.id]?.[m] || 0);
+          sums[idx] += val;
+        });
+      }
+    });
+    return sums;
+  }, [flatBudgetRows, apbdInputs, calculatedApbdMonthlyValues, apbdTabMode]);
 
   // Total BLUD Budget and Terpakai
   const bludBudgetTotal = useMemo(() => {
@@ -3709,7 +4123,10 @@ export default function App() {
                   </p>
                 </div>
                 <button
-                  onClick={() => window.print()}
+                  onClick={() => initiatePrint(
+                    activeAnggaranTab === 'blud' ? 'Laporan Rincian Anggaran BLUD RSUD dr. H. Jusuf SK' : 'Laporan Rincian Anggaran APBD RSUD dr. H. Jusuf SK',
+                    activeAnggaranTab === 'blud' ? 'tab-blud' : 'tab-apbd'
+                  )}
                   className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer inline-flex items-center gap-2 border shadow-sm shrink-0
                     ${theme === 'light'
                       ? 'bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-600 shadow-indigo-100'
@@ -4004,198 +4421,850 @@ export default function App() {
               {activeAnggaranTab === 'apbd' && (
                 <div id="tab-apbd" className="space-y-8 animate-fadeIn">
                   
-                  {/* Corporative Header Badge layout (from original design) */}
-                  <div className="card header-card rounded-[2.5rem] p-8 relative overflow-hidden bg-gradient-to-br from-slate-950 to-indigo-950 border border-slate-800">
-                    <div className="relative z-10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-8">
-                      <div>
-                        <h2 className="text-2xl font-black mb-1 text-white">Rincian Anggaran Belanja APBD 2026</h2>
-                        <p className="text-slate-400 text-sm font-semibold">Pemerintah Provinsi Kalimantan Utara — RSUD dr H JUSUF SK</p>
-                      </div>
+                  {/* APBD Stats cards (Mirrors BLUD stats cards!) */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className={`p-6 rounded-3xl border shadow-xl transition-all duration-300
+                      ${theme === 'light' ? 'bg-white border-slate-200/95 shadow-slate-100' : 'bg-slate-950 border-slate-800'}
+                    `}>
+                      <span className={`text-xs font-bold block mb-1 ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>Total Pagu APBD 2026</span>
+                      <h4 className={`text-2xl font-black ${theme === 'light' ? 'text-indigo-600' : 'text-indigo-400'}`}>Rp {formatIDR(PaguTotalAPBD)}</h4>
+                    </div>
+                    <div className={`p-6 rounded-3xl border shadow-xl transition-all duration-300
+                      ${theme === 'light' ? 'bg-white border-slate-200/95 shadow-slate-100' : 'bg-slate-950 border-slate-800'}
+                    `}>
+                      <span className={`text-xs font-bold block mb-1 ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>Terpakai (Realisasi PAD)</span>
+                      <h4 className={`text-2xl font-black ${theme === 'light' ? 'text-purple-600' : 'text-purple-400'}`}>Rp {formatIDR(totalAPBDRealisasi)}</h4>
+                    </div>
+                     <div className={`p-6 rounded-3xl border shadow-xl font-sans transition-all duration-300
+                      ${(PaguTotalAPBD - totalAPBDRealisasi) < (0.1 * PaguTotalAPBD)
+                        ? 'animate-danger-card-blink border-red-500/50'
+                        : (theme === 'light' ? 'bg-white border-slate-200/95 shadow-slate-100' : 'bg-slate-950 border-slate-800')
+                      }
+                    `}>
+                      <span className={`text-xs font-bold block mb-1 ${
+                        (PaguTotalAPBD - totalAPBDRealisasi) < (0.1 * PaguTotalAPBD)
+                          ? 'text-red-650'
+                          : (theme === 'light' ? 'text-slate-500' : 'text-slate-400')
+                      }`}>
+                        Sisa Pagu APBD {(PaguTotalAPBD - totalAPBDRealisasi) < (0.1 * PaguTotalAPBD) && '(Mendekati < 10%)'}
+                      </span>
+                      <h4 className={`text-2xl font-black ${
+                        (PaguTotalAPBD - totalAPBDRealisasi) < (0.1 * PaguTotalAPBD)
+                          ? 'animate-danger-blink text-red-600'
+                          : (theme === 'light' ? 'text-emerald-600' : 'text-emerald-400')
+                      }`}>
+                        Rp {formatIDR(PaguTotalAPBD - totalAPBDRealisasi)}
+                      </h4>
+                    </div>
+                  </div>
+
+                   {/* APBD DOUBLE MODE SWITCHER AND MENU BAR (Mirrors BLUD design!) */}
+                  <div className={`p-3 rounded-2xl border flex flex-col md:flex-row justify-between items-center gap-4 no-print transition-all duration-300
+                    ${theme === 'light' ? 'bg-slate-50 border-slate-200 shadow-sm' : 'bg-slate-950 border-slate-800'}
+                  `}>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setApbdTabMode('integrated');
+                          setApbdSubTab('monitoring');
+                        }}
+                        className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5
+                          ${apbdTabMode === 'integrated' 
+                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/25' 
+                            : (theme === 'light'
+                              ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70 border border-transparent'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
+                            )
+                          }
+                        `}
+                      >
+                        <LayoutDashboard className="w-4 h-4" />
+                        <span>SISTEM REKAP TERINTEGRASI APBD (TERBARU)</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setApbdTabMode('original');
+                        }}
+                        className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5
+                          ${apbdTabMode === 'original' 
+                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/25' 
+                            : (theme === 'light'
+                              ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70 border border-transparent'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
+                            )
+                          }
+                        `}
+                      >
+                        <FolderOpen className="w-4 h-4" />
+                        <span>BERKAS UNGGALAH MANUAL & GOOGLE SYNC</span>
+                      </button>
+                    </div>
+
+                    <div className="text-right">
+                      <span className={`text-[10px] px-2.5 py-1 rounded-lg border font-bold uppercase tracking-wide mr-[-9px] transition-all duration-350
+                        ${theme === 'light'
+                          ? 'bg-slate-200/80 text-teal-700 border-slate-300 shadow-sm'
+                          : 'bg-slate-900 text-teal-400 border-slate-800'
+                        }
+                      `}>
+                        Sumber: {apbdTabMode === 'integrated' ? 'Kolektif Anggaran Terpadu APBD' : 'Pendapatan Asli Daerah (PAD) APBD'} | RSUD dr. H. Jusuf SK, 2026
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* SUB-TAB 1: REKAP DAN MONITORING APBD */}
+                  {apbdSubTab === 'monitoring' && (
+                    <div className="space-y-8 animate-fadeIn">
                       
-                      {/* Pagu Total Badge */}
-                      <div className="bg-slate-900/80 border border-slate-700/50 rounded-2xl p-4 text-right flex flex-col shrink-0 min-w-[240px]">
-                        <span className="text-[10px] text-slate-400 font-black tracking-widest uppercase mb-1">Total Pagu Anggaran (PAD)</span>
-                        <span className="text-2xl font-black text-amber-400">Rp {formatIDR(PaguTotalAPBD)}</span>
-                      </div>
-                    </div>
+                      {/* Corporative Header Badge layout (from original design) */}
+                      <div className="card header-card rounded-[2.5rem] p-8 relative overflow-hidden bg-gradient-to-br from-slate-950 to-indigo-950 border border-slate-800">
+                        <div className="relative z-10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-8">
+                          <div>
+                            <h2 className="text-2xl font-black mb-1 text-white">Rincian Anggaran Belanja APBD 2026</h2>
+                            <p className="text-slate-400 text-sm font-semibold">Pemerintah Provinsi Kalimantan Utara — RSUD dr H JUSUF SK</p>
+                          </div>
+                          
+                          {/* Pagu Total Badge */}
+                          <div className="bg-slate-900/80 border border-slate-700/50 rounded-2xl p-4 text-right flex flex-col shrink-0 min-w-[240px]">
+                            <span className="text-[10px] text-slate-400 font-black tracking-widest uppercase mb-1">Total Pagu Anggaran (PAD)</span>
+                            <span className="text-2xl font-black text-amber-400">Rp {formatIDR(PaguTotalAPBD)}</span>
+                          </div>
+                        </div>
 
-                    <div className="info-grid grid grid-cols-2 md:grid-cols-4 gap-6 pt-6 border-t border-slate-800/80">
-                      <div>
-                        <label className="text-[10px] text-slate-500 font-black uppercase tracking-wider block mb-1">Sub Kegiatan</label>
-                        <span className="text-xs text-white font-bold block">Peningkatan Kompetensi & Kualifikasi SDM Kesehatan</span>
-                      </div>
-                      <div>
-                        <label className="text-[10px] text-slate-500 font-black uppercase tracking-wider block mb-1">Unit Organisasi</label>
-                        <span className="text-xs text-white font-bold block">RSUD dr H JUSUF SK</span>
-                      </div>
-                      <div>
-                        <label className="text-[10px] text-slate-500 font-black uppercase tracking-wider block mb-1">Target Kinerja</label>
-                        <span className="text-xs text-white font-bold block">370 Orang SDM Kesehatan</span>
-                      </div>
-                      <div>
-                        <label className="text-[10px] text-slate-500 font-black uppercase tracking-wider block mb-1">Waktu Pelaksanaan</label>
-                        <span className="text-xs text-white font-bold block">Januari s.d Desember 2026</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* CONTROL BAR CONTROLS (from original layout) */}
-                  <div className="bg-slate-950 p-6 rounded-3xl border border-slate-800 flex flex-col md:flex-row justify-between items-center gap-4 no-print shadow-xl">
-                    <div className="flex flex-wrap gap-3">
-                      <button 
-                        onClick={handleExportBackupAndDownload}
-                        className="bg-emerald-600 hover:bg-emerald-500 px-5 py-2.5 rounded-xl font-bold text-xs text-white inline-flex items-center gap-2 shadow-lg transition-colors select-none"
-                      >
-                        <Download className="w-4 h-4" />
-                        <span>Backup (.json)</span>
-                      </button>
-
-                      <button 
-                        onClick={() => fileInputRestoreRef.current?.click()}
-                        className="bg-indigo-600 hover:bg-indigo-500 px-5 py-2.5 rounded-xl font-bold text-xs text-white inline-flex items-center gap-2 shadow-lg transition-colors select-none"
-                      >
-                        <Upload className="w-4 h-4" />
-                        <span>Restore</span>
-                      </button>
-                      <input 
-                        ref={fileInputRestoreRef}
-                        type="file" 
-                        accept=".json"
-                        className="hidden" 
-                        onChange={handleFileRestoreUpload}
-                      />
-
-                      <button 
-                        onClick={handleResetAPBD}
-                        className="border border-slate-700 hover:border-rose-500 hover:bg-rose-500/10 px-5 py-2.5 rounded-xl font-bold text-xs text-slate-300 hover:text-white transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4 inline-block mr-1.5" />
-                        <span>Reset</span>
-                      </button>
-                    </div>
-
-                    <div className="flex items-center gap-4">
-                      {/* Last Saved Status */}
-                      <div className="bg-slate-900 border border-slate-800 rounded-full px-4 py-2 flex items-center gap-2 text-xs text-slate-400 font-bold">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                        <span>Status: {saveStatus}</span>
+                        <div className="info-grid grid grid-cols-2 md:grid-cols-4 gap-6 pt-6 border-t border-slate-800/80">
+                          <div>
+                            <label className="text-[10px] text-slate-500 font-black uppercase tracking-wider block mb-1">Sub Kegiatan</label>
+                            <span className="text-xs text-white font-bold block">Peningkatan Kompetensi & Kualifikasi SDM Kesehatan</span>
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-500 font-black uppercase tracking-wider block mb-1">Unit Organisasi</label>
+                            <span className="text-xs text-white font-bold block">RSUD dr H JUSUF SK</span>
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-500 font-black uppercase tracking-wider block mb-1">Target Kinerja</label>
+                            <span className="text-xs text-white font-bold block">370 Orang SDM Kesehatan</span>
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-500 font-black uppercase tracking-wider block mb-1">Waktu Pelaksanaan</label>
+                            <span className="text-xs text-white font-bold block">Januari s.d Desember 2026</span>
+                          </div>
+                        </div>
                       </div>
 
-                      <button 
-                        onClick={() => window.print()}
-                        className="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl inline-flex items-center gap-2 border border-slate-700"
-                      >
-                        <Printer className="w-4 h-4" />
-                        <span>Cetak</span>
-                      </button>
-                    </div>
-                  </div>
+                      {/* CONTROL BAR CONTROLS (from original layout) */}
+                      <div className="bg-slate-950 p-6 rounded-3xl border border-slate-800 flex flex-col md:flex-row justify-between items-center gap-4 no-print shadow-xl">
+                        <div className="flex flex-wrap gap-3">
+                          <button 
+                            onClick={handleExportBackupAndDownload}
+                            className="bg-emerald-600 hover:bg-emerald-500 px-5 py-2.5 rounded-xl font-bold text-xs text-white inline-flex items-center gap-2 shadow-lg transition-colors select-none"
+                          >
+                            <Download className="w-4 h-4" />
+                            <span>Backup (.json)</span>
+                          </button>
 
-                  {/* SPREADSHEET TABLE GRID CONTAINER (extremely robust React port) */}
-                  <div className="bg-slate-950 rounded-[2.5rem] border border-slate-800 overflow-hidden shadow-2xl relative">
-                    <div className="overflow-x-auto max-w-full">
-                      <table className="budget-table text-xs text-left" style={{ minWidth: '2600px', borderCollapse: 'separate', borderSpacing: 0 }}>
-                        
-                        <thead>
-                          <tr className="bg-slate-950 text-slate-400 uppercase tracking-wider border-b-2 border-indigo-900">
-                            <th className="p-3 w-[110px] text-center sticky left-0 z-20 bg-slate-950 border-r border-slate-800 font-black">Kode Rek.</th>
-                            <th className="p-3 w-[320px] sticky left-[110px] z-20 bg-slate-950 border-r border-slate-800 font-black">Uraian Belanja</th>
-                            <th className="p-3 w-[150px] text-right font-black">Pagu Anggaran</th>
-                            {MONTHS_LABEL_ID.map(m => (
-                              <th key={m.key} className="p-3 text-center font-bold tracking-widest">{m.label}</th>
-                            ))}
-                            <th className="p-3 w-[160px] text-right font-black whitespace-nowrap bg-indigo-950/20">Total Realisasi</th>
-                            <th className="p-3 w-[160px] text-right font-black whitespace-nowrap bg-emerald-950/20">Sisa Pagu</th>
-                          </tr>
-                        </thead>
+                          <button 
+                            onClick={() => fileInputRestoreRef.current?.click()}
+                            className="bg-indigo-600 hover:bg-indigo-500 px-5 py-2.5 rounded-xl font-bold text-xs text-white inline-flex items-center gap-2 shadow-lg transition-colors select-none"
+                          >
+                            <Upload className="w-4 h-4" />
+                            <span>Restore</span>
+                          </button>
+                          <input 
+                            ref={fileInputRestoreRef}
+                            type="file" 
+                            accept=".json"
+                            className="hidden" 
+                            onChange={handleFileRestoreUpload}
+                          />
 
-                        <tbody className="divide-y divide-slate-800">
-                          {flatBudgetRows.map((row) => {
-                            const isCategoryNode = row.isCat;
-                            const totalRealisasi = calculatedBudgetSums[row.id] || 0;
-                            const sisaPaguValue = row.budget - totalRealisasi;
-                            const plClass = row.level === 0 ? 'pl-4' : row.level === 1 ? 'pl-8' : 'pl-12';
+                          <button 
+                            onClick={handleResetAPBD}
+                            className="border border-slate-700 hover:border-rose-500 hover:bg-rose-500/10 px-5 py-2.5 rounded-xl font-bold text-xs text-slate-300 hover:text-white transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4 inline-block mr-1.5" />
+                            <span>Reset</span>
+                          </button>
+                        </div>
 
-                            return (
-                              <tr 
-                                key={row.id} 
-                                className={`
-                                  ${isCategoryNode ? 'bg-slate-900/50 font-bold text-white' : 'hover:bg-slate-900/30 text-slate-300'}
-                                  transition-all duration-100
-                                `}
-                              >
-                                {/* Code Column (Sticky 1) */}
-                                <td className="p-3 font-mono text-center sticky left-0 z-10 bg-slate-950 border-r border-slate-800/80 font-semibold text-slate-400">
-                                  {row.code || ''}
+                        <div className="flex items-center gap-4">
+                          {/* Last Saved Status */}
+                          <div className="bg-slate-900 border border-slate-800 rounded-full px-4 py-2 flex items-center gap-2 text-xs text-slate-400 font-bold">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                            <span>Status: {saveStatus}</span>
+                          </div>
+
+                          <button 
+                            onClick={() => initiatePrint('Rincian Anggaran Belanja APBD 2026', 'tab-apbd')}
+                            className="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl inline-flex items-center gap-2 border border-slate-700"
+                          >
+                            <Printer className="w-4 h-4" />
+                            <span>Cetak</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* NEW SECTION: MONITORING ALOKASI PER TRIWULAN (Symmetrical to BLUD!) */}
+                      <div id="apbd-triwulan" className="bg-slate-950 border border-slate-800 p-6 md:p-8 rounded-[2rem] shadow-2xl">
+                        <div className="flex justify-between items-center mb-6">
+                          <h4 className="font-extrabold text-white text-base uppercase tracking-wider flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-indigo-500 ml-1"></span>
+                            <span>Monitoring Alokasi Anggaran APBD Per Triwulan 2026</span>
+                          </h4>
+                          <button
+                            onClick={() => initiatePrint('Monitoring Alokasi Anggaran APBD Per Triwulan 2026', 'apbd-triwulan')}
+                            className="px-3.5 py-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-xs font-black text-slate-200 hover:text-white rounded-xl transition-all cursor-pointer flex items-center gap-1.5 no-print"
+                          >
+                            <Printer className="w-3.5 h-3.5 text-indigo-400" />
+                            <span>Cetak Lembar Monitoring</span>
+                          </button>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left">
+                            <thead>
+                              <tr className="border-b border-slate-800 text-[10px] text-slate-400 uppercase tracking-widest font-black">
+                                <th className="py-4 px-6 w-16">No</th>
+                                <th className="py-4 px-6">Triwulan Kegiatan</th>
+                                <th className="py-4 px-6 text-right">Target Pagu / Alokasi</th>
+                                <th className="py-4 px-6 text-right">Realisasi PAD Terkumpul</th>
+                                <th className="py-4 px-6 text-right">Sisa Alokasi Terbuka</th>
+                                <th className="py-4 px-6 text-right w-36">Persentase Capaian</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-900 font-sans text-xs">
+                              {[523493692, 523493692, 523493692, 523493692].map((alok, idx) => {
+                                const real = idx === 0 ? (calculatedApbdMonthlySums[0] + calculatedApbdMonthlySums[1] + calculatedApbdMonthlySums[2]) :
+                                             idx === 1 ? (calculatedApbdMonthlySums[3] + calculatedApbdMonthlySums[4] + calculatedApbdMonthlySums[5]) :
+                                             idx === 2 ? (calculatedApbdMonthlySums[6] + calculatedApbdMonthlySums[7] + calculatedApbdMonthlySums[8]) :
+                                                         (calculatedApbdMonthlySums[9] + calculatedApbdMonthlySums[10] + calculatedApbdMonthlySums[11]);
+                                const sisa = alok - real;
+                                const percent = alok ? Math.round((real / alok) * 100) : 0;
+                                return (
+                                  <tr key={idx} className="hover:bg-slate-900/30 transition-colors text-slate-300">
+                                    <td className="py-4 px-6 font-bold text-slate-400">{idx + 1}</td>
+                                    <td className="py-4 px-6 font-bold text-slate-100">
+                                      Triwulan {idx === 0 ? 'I (Jan - Mar)' : idx === 1 ? 'II (Apr - Jun)' : idx === 2 ? 'III (Jul - Sep)' : 'IV (Okt - Des)'}
+                                    </td>
+                                    <td className="py-4 px-6 text-right font-mono font-bold text-indigo-400">Rp {formatIDR(alok)}</td>
+                                    <td className="py-4 px-6 text-right font-mono font-bold text-purple-400">Rp {formatIDR(real)}</td>
+                                    <td className={`py-4 px-6 text-right font-mono font-bold ${
+                                      alok > 0 && sisa < (0.1 * alok)
+                                        ? 'animate-danger-blink bg-red-500/5'
+                                        : sisa < 0 ? 'text-rose-450' : 'text-emerald-400'
+                                    }`}>Rp {formatIDR(sisa)}</td>
+                                    <td className="py-4 px-6 text-right">
+                                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-black inline-block ${percent > 100 ? 'bg-rose-500/10 text-rose-450 border border-rose-500/10' : percent > 45 ? 'bg-amber-500/10 text-amber-450 border border-amber-500/10' : 'bg-emerald-500/10 text-emerald-450 border border-emerald-500/10'}`}>
+                                        {percent}%
+                                      </span>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                              {/* Total Triwulan row */}
+                              <tr className="bg-slate-900/40 font-bold text-white border-t-2 border-slate-800">
+                                <td colSpan={2} className="py-5 px-6 uppercase tracking-wider text-right font-black">Jumlah Total:</td>
+                                <td className="py-5 px-6 text-right font-mono font-black text-indigo-300 text-sm">Rp {formatIDR(PaguTotalAPBD)}</td>
+                                <td className="py-5 px-6 text-right font-mono font-black text-purple-300 text-sm">Rp {formatIDR(totalAPBDRealisasi)}</td>
+                                <td className={`py-5 px-6 text-right font-mono font-black text-sm ${(PaguTotalAPBD - totalAPBDRealisasi) < 0 ? 'text-rose-350' : 'text-emerald-350'}`}>
+                                  Rp {formatIDR(PaguTotalAPBD - totalAPBDRealisasi)}
                                 </td>
-
-                                {/* Name Column (Sticky 2) */}
-                                <td className={`p-3 sticky left-[110px] z-10 bg-slate-950 border-r border-slate-800/80 font-bold truncate max-w-[320px] text-slate-100 ${plClass}`}>
-                                  {row.name}
-                                </td>
-
-                                {/* Pagu Budget Column */}
-                                <td className="p-3 text-right font-bold text-slate-300 whitespace-nowrap">
-                                  {row.budget ? formatIDR(row.budget) : ''}
-                                </td>
-
-                                {/* 12 Months Column or Colspan 12 */}
-                                {isCategoryNode ? (
-                                  <td colSpan={12} className="p-3 bg-slate-900/30 text-center font-bold tracking-widest text-[10px] text-slate-500 uppercase">
-                                    Sub-kalkulasi Otomatis
-                                  </td>
-                                ) : (
-                                  MONTHS_KEY.map(m => {
-                                    const currVal = apbdInputs[row.id]?.[m];
-                                    return (
-                                      <td key={m} className="p-1 px-2 border-r border-slate-800/50">
-                                        <input 
-                                          type="text" 
-                                          className="month-input w-full bg-slate-900/60 p-2 text-right font-mono border border-slate-800 hover:border-slate-700/80 focus:border-indigo-500 focus:outline-none focus:bg-slate-900 rounded-lg text-xs font-black text-slate-100 placeholder-slate-850"
-                                          placeholder="0"
-                                          value={currVal ? formatIDR(currVal) : ''}
-                                          onChange={(e) => handleAPBDInput(row.id, m, e.target.value)}
-                                        />
-                                      </td>
-                                    );
-                                  })
-                                )}
-
-                                {/* Total Realisasi Column */}
-                                <td className="p-3 text-right font-black text-indigo-400 whitespace-nowrap bg-indigo-950/10">
-                                  {totalRealisasi ? formatIDR(totalRealisasi) : '0'}
-                                </td>
-
-                                {/* Sisa Pagu Column */}
-                                <td className={`p-3 text-right font-black whitespace-nowrap bg-slate-900 
-                                  ${sisaPaguValue < 0 ? 'text-rose-400 bg-rose-950/10' : 'text-emerald-400'}
-                                `}>
-                                  {sisaPaguValue ? formatIDR(sisaPaguValue) : '0'}
+                                <td className="py-5 px-6 text-right">
+                                  <span className="px-3 py-1 bg-indigo-900/40 text-indigo-300 rounded-lg border border-indigo-500/20 font-black font-sans text-xs">
+                                    {PaguTotalAPBD ? Math.round((totalAPBDRealisasi / PaguTotalAPBD) * 100) : 0}%
+                                  </span>
                                 </td>
                               </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* SPREADSHEET TABLE GRID CONTAINER (Sleek horizontal matrix layout) */}
+                      <div className={`p-6 md:p-8 rounded-[2.5rem] border transition-all relative ${
+                        theme === 'light'
+                          ? 'bg-white border-slate-200/80 shadow-lg shadow-slate-100'
+                          : 'bg-slate-950 border-slate-800 shadow-2xl'
+                      }`}>
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                          <div>
+                            <h4 className={`font-extrabold text-base uppercase tracking-wider flex items-center gap-2 ${
+                              theme === 'light' ? 'text-slate-900' : 'text-white'
+                            }`}>
+                              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                              <span>Matriks Realisasi & Alokasi APBD (12 Bulan)</span>
+                            </h4>
+                            <p className="text-[10px] text-slate-500 mt-1 font-bold">Gunakan scroll mendatar untuk melihat atau mengisi realisasi per bulan secara horizontal</p>
+                          </div>
+                        </div>
+
+                        <div className={`overflow-x-auto max-w-full rounded-2xl border ${
+                          theme === 'light' ? 'border-slate-200' : 'border-slate-900'
+                        }`}>
+                          <table className="budget-table text-xs text-left w-full" style={{ minWidth: '1800px', borderCollapse: 'separate', borderSpacing: 0 }}>
+                            <thead>
+                              <tr className={`uppercase tracking-wider border-b text-[10px] font-black ${
+                                theme === 'light' 
+                                  ? 'bg-slate-50 text-slate-500 border-slate-200' 
+                                  : 'bg-slate-900 text-slate-400 border-slate-850'
+                              }`}>
+                                <th className={`p-4 w-[110px] text-center sticky left-0 z-20 border-r ${
+                                  theme === 'light' ? 'bg-slate-50 text-slate-600 border-slate-200' : 'bg-slate-900 text-slate-400 border-slate-800'
+                                }`}>Kode Rek.</th>
+                                <th className={`p-4 w-[320px] sticky left-[110px] z-20 border-r ${
+                                  theme === 'light' ? 'bg-slate-50 text-slate-600 border-slate-200' : 'bg-slate-900 text-slate-400 border-slate-800'
+                                }`}>Uraian Belanja</th>
+                                <th className="p-4 w-[150px] text-right">Pagu Anggaran</th>
+                                {MONTHS_LABEL_ID.map(m => (
+                                  <th key={m.key} className="p-4 text-center font-bold tracking-widest">{m.label.toUpperCase()}</th>
+                                ))}
+                                <th className={`p-4 w-[160px] text-right ${
+                                  theme === 'light' ? 'bg-indigo-50/70 text-indigo-700' : 'bg-indigo-950/20 text-indigo-300'
+                                }`}>Total Realisasi</th>
+                                <th className={`p-4 w-[160px] text-right ${
+                                  theme === 'light' ? 'bg-emerald-50/70 text-emerald-700' : 'bg-emerald-950/20 text-emerald-300'
+                                }`}>Sisa Pagu</th>
+                              </tr>
+                            </thead>
+
+                            <tbody className={`divide-y ${
+                              theme === 'light' ? 'divide-slate-200' : 'divide-slate-900'
+                            }`}>
+                              {flatBudgetRows.map((row) => {
+                                const isCategoryNode = row.isCat;
+                                const totalRealisasi = calculatedBudgetSums[row.id] || 0;
+                                const sisaPaguValue = row.budget - totalRealisasi;
+                                const plClass = row.level === 0 ? 'pl-4' : row.level === 1 ? 'pl-8' : 'pl-12';
+
+                                return (
+                                  <tr 
+                                    key={row.id} 
+                                    className={`
+                                      ${isCategoryNode 
+                                        ? (theme === 'light' ? 'bg-slate-50/60 font-semibold text-slate-800' : 'bg-slate-900/50 font-bold text-white') 
+                                        : (theme === 'light' ? 'hover:bg-slate-50/50 text-slate-700' : 'hover:bg-slate-900/30 text-slate-300')}
+                                      transition-all duration-100
+                                    `}
+                                  >
+                                    {/* Code Column (Sticky 1) */}
+                                    <td className={`p-3 font-mono text-center sticky left-0 z-10 border-r font-semibold ${
+                                      theme === 'light'
+                                        ? 'bg-white text-slate-600 border-slate-200'
+                                        : 'bg-slate-950 text-slate-400 border-slate-900'
+                                    }`}>
+                                      {row.code || ''}
+                                    </td>
+
+                                    {/* Name Column (Sticky 2) */}
+                                    <td className={`p-3 sticky left-[110px] z-10 border-r font-bold truncate max-w-[320px] ${plClass} ${
+                                      theme === 'light'
+                                        ? 'bg-white text-slate-800 border-slate-200'
+                                        : 'bg-slate-950 text-slate-100 border-slate-900'
+                                    }`}>
+                                      {row.name}
+                                    </td>
+
+                                    {/* Pagu Budget Column */}
+                                    <td className={`p-3 text-right font-bold whitespace-nowrap ${
+                                      theme === 'light' ? 'text-slate-700' : 'text-slate-300'
+                                    }`}>
+                                      {row.budget ? `Rp ${formatIDR(row.budget)}` : ''}
+                                    </td>
+
+                                    {/* 12 Months Column or Colspan 12 */}
+                                    {isCategoryNode ? (
+                                      <td colSpan={12} className={`p-3 text-center font-bold tracking-widest text-[9px] uppercase ${
+                                        theme === 'light' ? 'bg-slate-50/40 text-slate-400' : 'bg-slate-900/20 text-slate-500'
+                                      }`}>
+                                        Sub-kalkulasi Otomatis
+                                      </td>
+                                    ) : (
+                                      MONTHS_KEY.map(m => {
+                                        const currVal = apbdInputs[row.id]?.[m];
+                                        return (
+                                          <td key={m} className={`p-1 px-1.5 border-r ${
+                                            theme === 'light' ? 'border-slate-100' : 'border-slate-900'
+                                          }`}>
+                                            <input 
+                                              type="text" 
+                                              className={`month-input w-full p-1.5 text-right font-mono border rounded-lg text-xs font-black transition-all ${
+                                                theme === 'light'
+                                                  ? 'bg-white border-slate-200 hover:border-slate-300 focus:border-indigo-500 text-slate-800 placeholder-slate-300'
+                                                  : 'bg-slate-900/40 border-slate-900 hover:border-slate-800 focus:border-indigo-500 focus:bg-slate-900/95 text-slate-200 placeholder-slate-800'
+                                              }`}
+                                              placeholder="0"
+                                              value={currVal ? formatIDR(currVal) : ''}
+                                              onChange={(e) => handleAPBDInput(row.id, m, e.target.value)}
+                                            />
+                                          </td>
+                                        );
+                                      })
+                                    )}
+
+                                    {/* Total Realisasi Column */}
+                                    <td className={`p-3 text-right font-black whitespace-nowrap ${
+                                      theme === 'light' ? 'bg-indigo-50/30 text-indigo-600' : 'bg-indigo-950/15 text-indigo-400'
+                                    }`}>
+                                      Rp {formatIDR(totalRealisasi)}
+                                    </td>
+
+                                    {/* Sisa Pagu Column */}
+                                    <td className={`p-3 text-right font-black whitespace-nowrap ${
+                                      row.budget > 0 && sisaPaguValue < (0.1 * row.budget)
+                                        ? 'animate-danger-blink bg-red-500/5'
+                                        : theme === 'light'
+                                          ? (sisaPaguValue < 0 ? 'text-rose-600 bg-rose-50/30' : 'text-emerald-600 bg-emerald-50/10')
+                                          : (sisaPaguValue < 0 ? 'text-rose-450 bg-rose-950/10' : 'text-emerald-400 bg-slate-950')
+                                    }`}>
+                                      Rp {formatIDR(sisaPaguValue)}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+
+                              {/* Grand Total Row */}
+                              <tr className={`grand-total font-extrabold text-sm border-t-4 ${
+                                theme === 'light' ? 'bg-slate-50 text-slate-900 border-slate-200' : 'bg-slate-950 text-white border-slate-900'
+                              }`}>
+                                <td colSpan={3} className={`p-4 text-right pr-6 sticky left-0 z-10 border-r ${
+                                  theme === 'light' ? 'bg-slate-50 text-slate-900 border-slate-200' : 'bg-slate-950 text-white border-slate-900'
+                                }`}>
+                                  JUMLAH TOTAL REALISASI APBD
+                                </td>
+                                <td colSpan={12} className={`p-4 ${theme === 'light' ? 'bg-slate-50' : 'bg-slate-950'}`}></td>
+                                <td className={`p-4 text-right font-extrabold whitespace-nowrap text-base ${
+                                  theme === 'light' ? 'bg-indigo-50/60 text-indigo-600' : 'bg-indigo-950 text-indigo-300'
+                                }`}>
+                                  Rp {formatIDR(totalAPBDRealisasi)}
+                                </td>
+                                <td className={`p-4 text-right font-extrabold whitespace-nowrap text-base ${
+                                  theme === 'light'
+                                    ? ((PaguTotalAPBD - totalAPBDRealisasi) < 0 ? 'text-rose-600 bg-rose-50/50' : 'text-emerald-600 bg-emerald-50/50')
+                                    : ((PaguTotalAPBD - totalAPBDRealisasi) < 0 ? 'text-rose-450 bg-rose-950/20' : 'text-emerald-400 bg-emerald-950/20')
+                                }`}>
+                                  Rp {formatIDR(PaguTotalAPBD - totalAPBDRealisasi)}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SUB-TAB 2: MONTH BY MONTH DIRECT INPUT (Symmetrical to BLUD monthly lists!) */}
+                  {apbdSubTab === 'input' && (() => {
+                    const activeMonthKey = MONTHS_KEY[selectedApbdMonth];
+                    const monthNames = [
+                      "Januari", "Februari", "Maret", "April", "Mei", "Juni", 
+                      "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+                    ];
+
+                    const filteredLeafRows = flatBudgetRows.filter(row => {
+                      if (row.isCat) return false;
+                      if (!apbdSearchQuery) return true;
+                      const q = apbdSearchQuery.toLowerCase();
+                      return (row.name || '').toLowerCase().includes(q) || (row.code || '').toLowerCase().includes(q);
+                    });
+
+                    const handleExportApbdPDFManual = () => {
+                      try {
+                        const doc = new jsPDF({
+                          orientation: 'landscape',
+                          unit: 'mm',
+                          format: [330, 215] // F4 size landscape: 330mm x 215mm
+                        });
+
+                        const formattedMonth = monthNames[selectedApbdMonth];
+
+                        // 1. Draw Governmental Official Letterhead (KOP SURAT RSUD)
+                        // Circle Emblem Background
+                        doc.setDrawColor(21, 128, 61); // Forest green
+                        doc.setFillColor(30, 58, 138); // Navy blue
+                        doc.setLineWidth(1.0);
+                        doc.circle(28, 23, 11, 'FD'); // Center (28, 23), radius 11
+                        
+                        // Golden circle inner ring
+                        doc.setDrawColor(245, 158, 11); // Amber gold
+                        doc.setLineWidth(0.6);
+                        doc.circle(28, 23, 9.5, 'S');
+                        
+                        // Initials Inside Emblem
+                        doc.setTextColor(255, 255, 255);
+                        doc.setFont("helvetica", "bold");
+                        doc.setFontSize(7.5);
+                        doc.text("RSUD", 28, 21.2, { align: 'center' });
+                        doc.setFontSize(5);
+                        doc.text("JUSUF SK", 28, 24.2, { align: 'center' });
+                        doc.setFontSize(4);
+                        doc.text("KALTARA", 28, 27.2, { align: 'center' });
+                        
+                        // Letterhead Text (Center Aligned to 165mm)
+                        doc.setTextColor(15, 23, 42); // slate-900
+                        doc.setFont("helvetica", "bold");
+                        doc.setFontSize(11);
+                        doc.text("PEMERINTAH PROVINSI KALIMANTAN UTARA", 165, 14, { align: 'center' });
+                        
+                        doc.setFontSize(15);
+                        doc.setTextColor(30, 58, 138); // Navy blue
+                        doc.text("RSUD dr. H. JUSUF SK", 165, 21, { align: 'center' });
+                        
+                        doc.setTextColor(71, 85, 105); // slate-600
+                        doc.setFontSize(8.5);
+                        doc.setFont("helvetica", "normal");
+                        doc.text("Jl. Ki Hajar Dewantara No. 1 Tarakan, Kalimantan Utara | Telp: (0551) 21166", 165, 26, { align: 'center' });
+                        doc.setFontSize(8);
+                        doc.text("Email: rsud.jusufsk@kaltaraprov.go.id | Website: rsudjusufsk.kaltaraprov.go.id", 165, 30, { align: 'center' });
+                        
+                        // Traditional Official Double Lines Separator
+                        doc.setDrawColor(15, 23, 42); // slate-900
+                        doc.setLineWidth(0.8);
+                        doc.line(15, 33, 315, 33);
+                        doc.setLineWidth(0.3);
+                        doc.line(15, 34.2, 315, 34.2);
+
+                        // 2. Report Document Title & Sub title
+                        doc.setFont("helvetica", "bold");
+                        doc.setFontSize(11);
+                        doc.setTextColor(15, 23, 42);
+                        doc.text("LAPORAN DAERAH RINCIAN REALISASI ANGGARAN APBD SUB-KEGIATAN", 15, 42);
+                        
+                        doc.setFontSize(8.5);
+                        doc.setFont("helvetica", "normal");
+                        doc.setTextColor(71, 85, 105);
+                        doc.text(`Bulan Anggaran Laporan: ${formattedMonth.toUpperCase()} 2026`, 15, 47);
+                        
+                        // 3. Metadata Grid (Spacious, Beautiful Layout)
+                        doc.setDrawColor(226, 232, 240); // slate-200 border
+                        doc.setFillColor(248, 250, 252); // slate-50 bk
+                        doc.setLineWidth(0.3);
+                        doc.rect(15, 51, 300, 15, 'FD'); // rect card
+                        
+                        doc.setFontSize(8);
+                        doc.setTextColor(51, 65, 85);
+                        // Left side metadata
+                        doc.setFont("helvetica", "bold");
+                        doc.text("Sub Kegiatan :", 18, 55.5);
+                        doc.setFont("helvetica", "normal");
+                        doc.text("Peningkatan Kompetensi & Kualifikasi SDM Kesehatan", 39, 55.5);
+                        
+                        doc.setFont("helvetica", "bold");
+                        doc.text("Sumber Dana  :", 18, 60.5);
+                        doc.setFont("helvetica", "normal");
+                        doc.text("PAD (Pendapatan Asli Daerah) APBD 2026", 39, 60.5);
+                        
+                        // Right side metadata
+                        doc.setFont("helvetica", "bold");
+                        doc.text("Organisasi     :", 170, 55.5);
+                        doc.setFont("helvetica", "normal");
+                        doc.text("RSUD dr H JUSUF SK (Provinsi Kalimantan Utara)", 193, 55.5);
+                        
+                        doc.setFont("helvetica", "bold");
+                        doc.text("Penyedia Data :", 170, 60.5);
+                        doc.setFont("helvetica", "normal");
+                        doc.text("SISTEM REKAP SIPANDA ANGGARAN", 193, 60.5);
+
+                        // Calculations
+                        const totalPaguSum = filteredLeafRows.reduce((acc, r) => acc + (r.budget || 0), 0);
+                        const totalRealisasiBulanIniSum = filteredLeafRows.reduce((acc, r) => acc + (apbdInputs[r.id]?.[activeMonthKey] || 0), 0);
+                        const totalSisaPaguSum = filteredLeafRows.reduce((acc, r) => {
+                          const totalOtherMonths = MONTHS_KEY.reduce((sumVal, m) => m === activeMonthKey ? sumVal : sumVal + (apbdInputs[r.id]?.[m] || 0), 0);
+                          const currVal = apbdInputs[r.id]?.[activeMonthKey] || 0;
+                          return acc + ((r.budget || 0) - (totalOtherMonths + currVal));
+                        }, 0);
+
+                        // Extract rows
+                        const tableBody = filteredLeafRows.map((row, i) => {
+                          const totalOtherMonths = MONTHS_KEY.reduce((acc, m) => m === activeMonthKey ? acc : acc + (apbdInputs[row.id]?.[m] || 0), 0);
+                          const currVal = apbdInputs[row.id]?.[activeMonthKey] || 0;
+                          const itemBalance = (row.budget || 0) - (totalOtherMonths + currVal);
+                          return [
+                            (i + 1).toString(),
+                            row.code || 'Tanpa Kode',
+                            row.name || '',
+                            `Rp ${formatIDR(row.budget || 0)}`,
+                            `Rp ${formatIDR(currVal)}`,
+                            `Rp ${formatIDR(itemBalance)}`
+                          ];
+                        });
+
+                        // Draw Grid Table via jsPDF-autotable
+                        autoTable(doc, {
+                          startY: 72,
+                          theme: 'grid',
+                          head: [
+                            [
+                              "No", 
+                              "Kode Rekening", 
+                              "Uraian / Akun Belanja APBD", 
+                              "Pagu Anggaran (Rp)", 
+                              `Realisasi ${formattedMonth} (Rp)`, 
+                              "Sisa Pagu Item (Rp)"
+                            ]
+                          ],
+                          body: tableBody,
+                          foot: [
+                            [
+                              "", 
+                              "", 
+                              "JUMLAH TOTAL FILTERED ANGGARAN APBD", 
+                              `Rp ${formatIDR(totalPaguSum)}`, 
+                              `Rp ${formatIDR(totalRealisasiBulanIniSum)}`, 
+                              `Rp ${formatIDR(totalSisaPaguSum)}`
+                            ]
+                          ],
+                          headStyles: {
+                            fillColor: [241, 245, 249], // Slate 100
+                            textColor: [15, 23, 42],     // Slate 900
+                            fontStyle: 'bold',
+                            fontSize: 8.5,
+                            halign: 'center',
+                            valign: 'middle'
+                          },
+                          footStyles: {
+                            fillColor: [241, 245, 249],
+                            textColor: [15, 23, 42],
+                            fontStyle: 'bold',
+                            fontSize: 9,
+                            halign: 'left'
+                          },
+                          styles: {
+                            font: 'helvetica',
+                            fontSize: 8.5,
+                            cellPadding: 3.5,
+                            textColor: [51, 65, 85],
+                            overflow: 'linebreak'
+                          },
+                          columnStyles: {
+                            0: { halign: 'center', cellWidth: 10 },
+                            1: { halign: 'center', cellWidth: 40 },
+                            2: { halign: 'left', cellWidth: 115 },
+                            3: { halign: 'right', cellWidth: 45 },
+                            4: { halign: 'right', cellWidth: 45 },
+                            5: { halign: 'right', cellWidth: 45, fontStyle: 'bold' }
+                          },
+                          margin: { left: 15, right: 15, top: 25, bottom: 42 },
+                          didDrawPage: (data) => {
+                            if (data.pageNumber > 1) {
+                              // Running headers for subsequent pages
+                              doc.setFont("helvetica", "bold");
+                              doc.setFontSize(8);
+                              doc.setTextColor(71, 85, 105);
+                              doc.text("LAPORAN RINCIAN REALISASI ANGGARAN APBD RSUD dr. H. JUSUF SK", 15, 12);
+                              doc.setFont("helvetica", "normal");
+                              doc.text(`Bulan Laporan: ${formattedMonth.toUpperCase()} 2026`, 315, 12, { align: 'right' });
+                              
+                              doc.setDrawColor(203, 213, 225);
+                              doc.setLineWidth(0.3);
+                              doc.line(15, 15, 315, 15);
+                            }
+                          },
+                          didParseCell: (data) => {
+                            // Dynamic font size adjustment for long text in cells to prevent table row overflow and keep cell wrapping clean
+                            if (data.section === 'body') {
+                              const txt = Array.isArray(data.cell.text) ? data.cell.text.join(' ') : String(data.cell.text || '');
+                              if (txt.length > 120) {
+                                data.cell.styles.fontSize = 6.0;
+                                data.cell.styles.cellPadding = 2.0;
+                              } else if (txt.length > 85) {
+                                data.cell.styles.fontSize = 7.0;
+                                data.cell.styles.cellPadding = 2.5;
+                              } else if (txt.length > 45) {
+                                data.cell.styles.fontSize = 7.5;
+                                data.cell.styles.cellPadding = 3.0;
+                              }
+                            }
+                            if (data.section === 'foot') {
+                              if (data.column.index === 2) {
+                                data.cell.styles.halign = 'right';
+                                data.cell.styles.fontStyle = 'bold';
+                              }
+                              if (data.column.index === 4 || data.column.index === 5) {
+                                data.cell.styles.halign = 'right';
+                                data.cell.styles.textColor = [79, 70, 229]; // Indigo-600 focus
+                              }
+                            }
+                          }
+                        });
+
+                        // Indonesian signature block placement
+                        let finalY = (doc as any).lastAutoTable.finalY + 12;
+                        
+                        if (finalY > 165) {
+                          doc.addPage();
+                          finalY = 25;
+                        }
+
+                        doc.setFont("helvetica", "normal");
+                        doc.setFontSize(8.5);
+                        doc.setTextColor(30, 41, 59);
+
+                        // Approval "Mengetahui" Block (Left Position)
+                        doc.text("Mengetahui,", 15, finalY);
+                        doc.text("Pejabat Teknis Kegiatan APBD", 15, finalY + 5);
+                        doc.text("( _______________________________________ )", 15, finalY + 28);
+                        doc.text("NIP.", 15, finalY + 33);
+
+                        // Approval "Bendahara" Block (Right Position)
+                        const signatureDate = `Tarakan, ${formattedMonth} 2026`;
+                        doc.text(signatureDate, 200, finalY);
+                        doc.text("Bendahara Pengeluaran Pembantu APBD", 200, finalY + 5);
+                        doc.text("( _______________________________________ )", 200, finalY + 28);
+                        doc.text("NIP.", 200, finalY + 33);
+
+                        // Beautiful Page number headers and line footnotes
+                        const pageCount = (doc as any).internal.getNumberOfPages();
+                        for (let i = 1; i <= pageCount; i++) {
+                          doc.setPage(i);
+                          doc.setFontSize(8);
+                          doc.setTextColor(148, 163, 184); // slate-400
+                          
+                          doc.setDrawColor(241, 245, 249);
+                          doc.line(15, 199, 315, 199);
+                          
+                          doc.text("SIPANDA ANGGARAN • RSUD dr. H. JUSUF SK (APBD MODUL)", 15, 204);
+                          doc.text(`Halaman ${i} dari ${pageCount}`, 315, 204, { align: 'right' });
+                        }
+
+                        doc.save(`SIPANDA_LAPORAN_REALISASI_APBD_${formattedMonth}_2026.pdf`);
+                        triggerToast('PDF Laporan APBD Terunggah dan Terunduh dengan Format F4.', 'success');
+                      } catch (err: any) {
+                        console.error(err);
+                        triggerToast('Gagal memproses ekspor PDF APBD: ' + err.message, 'error');
+                      }
+                    };
+
+                    return (
+                      <div className="space-y-8 animate-fadeIn">
+                        
+                        {/* 12 MONTH SELECTOR BUTTONS (Symmetrical to BLUD!) */}
+                        <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800 flex flex-wrap gap-1.5 justify-between no-print">
+                          {monthNames.map((m, idx) => {
+                            let monthTotal = calculatedApbdMonthlySums[idx] || 0;
+
+                            return (
+                              <button
+                                key={m}
+                                onClick={() => setSelectedApbdMonth(idx)}
+                                className={`flex-1 min-w-[90px] px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider block text-center transition-all cursor-pointer
+                                  ${selectedApbdMonth === idx 
+                                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/10 scale-[1.03]' 
+                                    : (theme === 'light'
+                                      ? 'bg-white border border-slate-200 text-slate-700 hover:border-slate-350 hover:bg-slate-50'
+                                      : 'bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-850'
+                                    )
+                                  }
+                                `}
+                              >
+                                <span className="block mb-0.5">{m.slice(0, 3)}</span>
+                                <span className={`block font-mono text-[9px] font-bold ${selectedApbdMonth === idx ? 'text-indigo-200' : 'text-slate-500'}`}>
+                                  {monthTotal > 0 ? formatIDR(monthTotal) : '0'}
+                                </span>
+                              </button>
                             );
                           })}
+                        </div>
 
-                          {/* Grand Total Row */}
-                          <tr className="grand-total bg-slate-950 text-white font-extrabold text-sm border-t-4 border-indigo-900">
-                            <td colSpan={3} className="p-4 text-right pr-6 sticky left-0 z-10 bg-slate-950 border-r border-slate-800">
-                              JUMLAH TOTAL REALISASI APBD
-                            </td>
-                            <td colSpan={12} className="p-4 bg-slate-950 no-print"></td>
-                            <td className="p-4 text-right bg-indigo-950 text-indigo-300 font-extrabold whitespace-nowrap text-base">
-                              Rp {formatIDR(totalAPBDRealisasi)}
-                            </td>
-                            <td className={`p-4 text-right font-extrabold whitespace-nowrap text-base 
-                              ${(PaguTotalAPBD - totalAPBDRealisasi) < 0 ? 'bg-rose-950/40 text-rose-300' : 'bg-emerald-950/40 text-emerald-300'}
-                            `}>
-                              Rp {formatIDR(PaguTotalAPBD - totalAPBDRealisasi)}
-                            </td>
-                          </tr>
-                        </tbody>
+                        {/* Search & Controller Header */}
+                        <div className="bg-slate-950 p-6 rounded-3xl border border-slate-800 shadow-xl flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 no-print">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+                            <h3 className="text-sm font-black text-white uppercase tracking-wider">
+                              INPUT ANGGARAN BULAN: {monthNames[selectedApbdMonth].toUpperCase()} 2026
+                            </h3>
+                          </div>
 
-                      </table>
-                    </div>
-                  </div>
+                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
+                            <button
+                              onClick={handleExportApbdPDFManual}
+                              className="bg-red-700 hover:bg-red-600 text-white text-xs font-black px-4 py-2.5 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-lg shadow-red-950/20"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              <span>Ekspor PDF (F4)</span>
+                            </button>
+
+                            <div className="relative w-full sm:w-64 font-sans">
+                              <input
+                                type="text"
+                                value={apbdSearchQuery}
+                                onChange={(e) => setApbdSearchQuery(e.target.value)}
+                                placeholder="Cari kode atau uraian belanja..."
+                                className="w-full bg-slate-900 border border-slate-800 hover:border-slate-700 focus:border-indigo-500 rounded-xl px-4 py-2.5 pl-10 text-xs font-semibold text-slate-100 placeholder-slate-550 focus:outline-none"
+                              />
+                              <Search className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Leaf Input List Container */}
+                        <div className="bg-slate-950 border border-slate-800 p-6 md:p-8 rounded-[2.5rem] shadow-2xl">
+                          {filteredLeafRows.length === 0 ? (
+                            <div className="text-center py-12 text-slate-500 font-bold">
+                              Tidak ada item anggaran APBD ditemukan untuk "{apbdSearchQuery}".
+                            </div>
+                          ) : (
+                            <div className="space-y-4">
+                              {filteredLeafRows.map((row) => {
+                                const currVal = apbdInputs[row.id]?.[activeMonthKey] || 0;
+                                const totalOtherMonths = MONTHS_KEY.reduce((acc, m) => m === activeMonthKey ? acc : acc + (apbdInputs[row.id]?.[m] || 0), 0);
+                                const totalBudget = row.budget || 0;
+                                const currentTotalSpend = totalOtherMonths + currVal;
+                                const itemBalance = totalBudget - currentTotalSpend;
+
+                                return (
+                                  <div 
+                                    key={row.id}
+                                    className="p-5 rounded-2xl border border-slate-850 hover:border-slate-700 bg-slate-900/20 hover:bg-slate-900/40 transition-all flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                                        <span className="font-mono text-[9px] font-bold text-slate-500 px-2 py-0.5 rounded bg-slate-900 border border-slate-800">
+                                          {row.code || 'Tanpa Kode'}
+                                        </span>
+                                        <span className="text-[10px] font-bold text-indigo-400">
+                                          Pagu: Rp {formatIDR(totalBudget)}
+                                        </span>
+                                      </div>
+                                      <h4 className="text-xs md:text-sm font-bold text-slate-100 mb-2 leading-snug">{row.name}</h4>
+                                      
+                                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] font-bold">
+                                        <span className="text-slate-400">Realisasi Bulan Lain: <strong className="text-purple-400 font-mono">Rp {formatIDR(totalOtherMonths)}</strong></span>
+                                        <span>•</span>
+                                        <span className={
+                                          totalBudget > 0 && itemBalance < (0.1 * totalBudget)
+                                            ? 'text-red-500 animate-danger-blink font-black'
+                                            : itemBalance < 0
+                                              ? 'text-rose-450 animate-pulse'
+                                              : 'text-emerald-450'
+                                        }>
+                                          Sisa Pagu Item: <strong className="font-mono">Rp {formatIDR(itemBalance)}</strong>
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    <div className="w-full sm:w-auto shrink-0 flex items-center gap-3">
+                                      <div className="text-right hidden md:block select-none">
+                                        <span className="text-[9px] text-slate-500 font-extrabold uppercase block mb-1">Nilai Realisasi</span>
+                                        <span className="text-[10px] text-slate-400 font-bold block">{monthNames[selectedApbdMonth]} (Rp)</span>
+                                      </div>
+                                      <div className="relative w-full sm:w-64">
+                                        <input 
+                                          type="text" 
+                                          className="w-full bg-slate-900 border border-slate-800 hover:border-slate-700 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-right font-mono text-sm font-black text-slate-100 placeholder-slate-800 focus:outline-none"
+                                          placeholder="0"
+                                          value={currVal ? formatIDR(currVal) : ''}
+                                          onChange={(e) => handleAPBDInput(row.id, activeMonthKey, e.target.value)}
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* ACTIVE SESSION PDF ATTACHMENTS (Real Local File Previews) */}
                   <div className="bg-slate-950 rounded-[2.5rem] border border-slate-800 p-8 shadow-xl no-print">
@@ -4297,11 +5366,24 @@ export default function App() {
                       <span className={`text-xs font-bold block mb-1 ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>Terpakai (Realisasi SPJ)</span>
                       <h4 className={`text-2xl font-black ${theme === 'light' ? 'text-purple-600' : 'text-purple-400'}`}>Rp {formatIDR(bludRealisasiTotal)}</h4>
                     </div>
-                    <div className={`p-6 rounded-3xl border shadow-xl font-sans transition-all duration-300
-                      ${theme === 'light' ? 'bg-white border-slate-200/95 shadow-slate-100' : 'bg-slate-950 border-slate-800'}
+                     <div className={`p-6 rounded-3xl border shadow-xl font-sans transition-all duration-300
+                      ${(bludBudgetTotal - bludRealisasiTotal) < (0.1 * bludBudgetTotal)
+                        ? 'animate-danger-card-blink border-red-500/50'
+                        : (theme === 'light' ? 'bg-white border-slate-200/95 shadow-slate-100' : 'bg-slate-950 border-slate-800')
+                      }
                     `}>
-                      <span className={`text-xs font-bold block mb-1 ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>Sisa Pagu BLUD</span>
-                      <h4 className={`text-2xl font-black ${(bludBudgetTotal - bludRealisasiTotal) < 0 ? 'text-rose-500 animate-pulse' : (theme === 'light' ? 'text-emerald-600' : 'text-emerald-400')}`}>
+                      <span className={`text-xs font-bold block mb-1 ${
+                        (bludBudgetTotal - bludRealisasiTotal) < (0.1 * bludBudgetTotal)
+                          ? 'text-red-650'
+                          : (theme === 'light' ? 'text-slate-500' : 'text-slate-400')
+                      }`}>
+                        Sisa Pagu BLUD {(bludBudgetTotal - bludRealisasiTotal) < (0.1 * bludBudgetTotal) && '(Mendekati < 10%)'}
+                      </span>
+                      <h4 className={`text-2xl font-black ${
+                        (bludBudgetTotal - bludRealisasiTotal) < (0.1 * bludBudgetTotal)
+                          ? 'animate-danger-blink text-red-600'
+                          : (theme === 'light' ? 'text-emerald-600' : 'text-emerald-400')
+                      }`}>
                         Rp {formatIDR(bludBudgetTotal - bludRealisasiTotal)}
                       </h4>
                     </div>
@@ -4414,6 +5496,112 @@ export default function App() {
 
                     const twTotalAlokasi = twAlokasi.reduce((a, b) => a + b, 0);
                     const twTotalRealisasi = twRealisasi.reduce((a, b) => a + b, 0);
+
+                    // Recharts Data Prep
+                    const chartMonthlyData = (() => {
+                      const monthsAbbr = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+                      let runningCumulative = 0;
+                      return monthsAbbr.map((mName, mIdx) => {
+                        let monthlyTotal = 0;
+                        for (let itemIdx = 0; itemIdx < 10; itemIdx++) {
+                          monthlyTotal += calculatedBludMonthlyValues[itemIdx]?.[mIdx] || 0;
+                        }
+                        runningCumulative += monthlyTotal;
+                        return {
+                          name: mName,
+                          "Realisasi Bulanan": monthlyTotal,
+                          "Kumulatif SPJ": runningCumulative,
+                        };
+                      });
+                    })();
+
+                    const chartTriwulanData = (() => {
+                      const twNames = ['Triwulan I', 'Triwulan II', 'Triwulan III', 'Triwulan IV'];
+                      return twNames.map((name, idx) => {
+                        const alok = twAlokasi[idx] || 0;
+                        const real = twRealisasi[idx] || 0;
+                        return {
+                          name,
+                          "Rencana Alokasi": alok,
+                          "Realisasi SPJ": real,
+                          "Sisa Alokasi": Math.max(0, alok - real),
+                          "Persentase": alok ? Math.round((real / alok) * 100) : 0
+                        };
+                      });
+                    })();
+
+                    const chartItemsData = (() => {
+                      const itemsAbbr = [
+                        "Nasi Kotak", "Snack Kotak", "Hn. Narasumber", "Hn. MC", 
+                        "Belanja Kontri.", "Kontri. Dr Sp", "Perjadin Dlm.", 
+                        "Perjadin Luar", "Perjadin Akre.", "Perjadin Dr Sp"
+                      ];
+                      return itemsNama.map((nama, idx) => {
+                        const pagu = itemsPagu[idx] || 0;
+                        const values = calculatedBludMonthlyValues[idx] || Array(12).fill(0);
+                        const totalSPJ = values.reduce((a, b) => a + b, 0);
+                        return {
+                          name: itemsAbbr[idx] || nama,
+                          "Pagu Anggaran": pagu,
+                          "Realisasi SPJ": totalSPJ,
+                          "Persentase": pagu ? Math.round((totalSPJ / pagu) * 100) : 0
+                        };
+                      });
+                    })();
+
+                    const chartCategoriesData = (() => {
+                      const categories = [
+                        { name: "Makan Minum", indices: [0, 1] },
+                        { name: "Honor Panitia", indices: [2, 3] },
+                        { name: "Belanja Kontri.", indices: [4, 5] },
+                        { name: "Perjadin", indices: [6, 7, 8, 9] }
+                      ];
+                      return categories.map(cat => {
+                        let pagu = 0;
+                        let realisasi = 0;
+                        cat.indices.forEach(idx => {
+                          pagu += itemsPagu[idx] || 0;
+                          const values = calculatedBludMonthlyValues[idx] || Array(12).fill(0);
+                          realisasi += values.reduce((a, b) => a + b, 0);
+                        });
+                        return {
+                          name: cat.name,
+                          value: realisasi,
+                          "Pagu": pagu,
+                          "Persentase": pagu ? Math.round((realisasi / pagu) * 100) : 0
+                        };
+                      });
+                    })();
+
+                    const CustomTooltip = ({ active, payload, label }: any) => {
+                      if (active && payload && payload.length) {
+                        return (
+                          <div className={`p-3.5 rounded-2xl border shadow-xl backdrop-blur-md ${
+                            theme === 'light' 
+                              ? 'bg-white/95 border-indigo-100 text-slate-900 shadow-slate-100 shadow-sm' 
+                              : 'bg-slate-950/95 border-indigo-500/30 text-white shadow-[#6366f1]/10'
+                          }`}>
+                            <p className="font-sans font-black text-xs uppercase tracking-wide mb-1.5">{label}</p>
+                            <div className="space-y-1">
+                              {payload.map((entry: any, i: number) => {
+                                const isPercent = entry.name?.toLowerCase().includes('persen') || entry.name?.toLowerCase().includes('prosentase') || entry.name?.toLowerCase() === 'persentase';
+                                return (
+                                  <div key={i} className="flex items-center gap-4 justify-between text-[11px]">
+                                    <span className="font-semibold text-slate-500 dark:text-slate-400">
+                                      {entry.name}:
+                                    </span>
+                                    <span className="font-mono font-black" style={{ color: entry.color || entry.fill }}>
+                                      {isPercent ? `${entry.value}%` : `Rp ${formatIDR(entry.value)}`}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    };
 
                     // Monthly strings
                     const monthNames = [
@@ -4539,6 +5727,268 @@ export default function App() {
                       triggerToast('Spreasheet Rekapitulasi Berhasil Diexport!');
                     };
 
+                    const handleExportPDFManual = () => {
+                      try {
+                        const doc = new jsPDF({
+                          orientation: 'landscape',
+                          unit: 'mm',
+                          format: [330, 215] // F4 size landscape: 330mm x 215mm
+                        });
+
+                        const subTabLabel = 
+                          bludSubTab === 'rekap_kontribusi' ? 'Rekap Kontribusi' :
+                          bludSubTab === 'perjalanan_dinas' ? 'Rekap Perjalanan Dinas' :
+                          bludSubTab === 'makan_minum' ? 'Rekap Makan Minum' : 'Rekap Honorarium';
+
+                        const formattedMonth = monthNames[selectedRekapMonth];
+
+                        // 1. Draw Governmental Official Letterhead (KOP SURAT RSUD)
+                        // Circle Emblem Background
+                        doc.setDrawColor(21, 128, 61); // Forest green
+                        doc.setFillColor(30, 58, 138); // Navy blue
+                        doc.setLineWidth(1.0);
+                        doc.circle(28, 23, 11, 'FD'); // Center (28, 23), radius 11
+                        
+                        // Golden circle inner ring
+                        doc.setDrawColor(245, 158, 11); // Amber gold
+                        doc.setLineWidth(0.6);
+                        doc.circle(28, 23, 9.5, 'S');
+                        
+                        // Initials Inside Emblem
+                        doc.setTextColor(255, 255, 255);
+                        doc.setFont("helvetica", "bold");
+                        doc.setFontSize(7.5);
+                        doc.text("RSUD", 28, 21.2, { align: 'center' });
+                        doc.setFontSize(5);
+                        doc.text("JUSUF SK", 28, 24.2, { align: 'center' });
+                        doc.setFontSize(4);
+                        doc.text("KALTARA", 28, 27.2, { align: 'center' });
+                        
+                        // Letterhead Text (Center Aligned to 165mm)
+                        doc.setTextColor(15, 23, 42); // slate-900
+                        doc.setFont("helvetica", "bold");
+                        doc.setFontSize(11);
+                        doc.text("PEMERINTAH PROVINSI KALIMANTAN UTARA", 165, 14, { align: 'center' });
+                        
+                        doc.setFontSize(15);
+                        doc.setTextColor(30, 58, 138); // Navy blue
+                        doc.text("RSUD dr. H. JUSUF SK", 165, 21, { align: 'center' });
+                        
+                        doc.setTextColor(71, 85, 105); // slate-600
+                        doc.setFontSize(8.5);
+                        doc.setFont("helvetica", "normal");
+                        doc.text("Jl. Ki Hajar Dewantara No. 1 Tarakan, Kalimantan Utara | Telp: (0551) 21166", 165, 26, { align: 'center' });
+                        doc.setFontSize(8);
+                        doc.text("Email: rsud.jusufsk@kaltaraprov.go.id | Website: rsudjusufsk.kaltaraprov.go.id", 165, 30, { align: 'center' });
+                        
+                        // Traditional Official Double Lines Separator
+                        doc.setDrawColor(15, 23, 42); // slate-900
+                        doc.setLineWidth(0.8);
+                        doc.line(15, 33, 315, 33);
+                        doc.setLineWidth(0.3);
+                        doc.line(15, 34.2, 315, 34.2);
+
+                        // 2. Report Document Title & Sub title
+                        doc.setFont("helvetica", "bold");
+                        doc.setFontSize(11);
+                        doc.setTextColor(15, 23, 42);
+                        doc.text("LAPORAN RINCIAN ANGGARAN REKAPITULASI REALISASI SPJ", 15, 42);
+                        
+                        doc.setFontSize(8.5);
+                        doc.setFont("helvetica", "normal");
+                        doc.setTextColor(71, 85, 105);
+                        doc.text(`Kategori Belanja: ${subTabLabel.toUpperCase()} - BULAN ${formattedMonth.toUpperCase()} 2026`, 15, 47);
+                        
+                        // 3. Metadata Grid (Spacious, Beautiful Layout)
+                        doc.setDrawColor(226, 232, 240); // slate-200 border
+                        doc.setFillColor(248, 250, 252); // slate-50 bk
+                        doc.setLineWidth(0.3);
+                        doc.rect(15, 51, 300, 15, 'FD'); // rect card
+                        
+                        doc.setFontSize(8);
+                        doc.setTextColor(51, 65, 85);
+                        // Left side metadata
+                        doc.setFont("helvetica", "bold");
+                        doc.text("Kode Kegiatan :", 18, 55.5);
+                        doc.setFont("helvetica", "normal");
+                        doc.text("00.01.01.05.09 (Pendidikan dan Pelatihan Pegawai)", 40, 55.5);
+                        
+                        doc.setFont("helvetica", "bold");
+                        doc.text("Sumber Dana   :", 18, 60.5);
+                        doc.setFont("helvetica", "normal");
+                        doc.text("Jasa Layanan BLUD (Badan Layanan Umum Daerah) RSUD dr H JUSUF SK", 40, 60.5);
+                        
+                        // Right side metadata
+                        doc.setFont("helvetica", "bold");
+                        doc.text("Tahun Anggaran :", 170, 55.5);
+                        doc.setFont("helvetica", "normal");
+                        doc.text("2026", 193, 55.5);
+                        
+                        doc.setFont("helvetica", "bold");
+                        doc.text("Status Laporan :", 170, 60.5);
+                        doc.setFont("helvetica", "normal");
+                        doc.text("DIALOKASIKAN PER TANGGAL TRANSAKSI SPJ", 193, 60.5);
+
+                        // Extract rows
+                        const tableBody = currentMonthRows.map((r, i) => {
+                          const valStr = r.kolom4 || '0';
+                          const num = parseFloat(valStr.replace(/[^0-9]/g, '')) || 0;
+                          return [
+                            r.kolom1 || (i + 1).toString(),
+                            r.kolom2 || '',
+                            r.kolom3 || '',
+                            r.kolom5 || belanjaDefaultLabel,
+                            r.kolom6 || '',
+                            `Rp ${formatIDR(num)}`
+                          ];
+                        });
+
+                        // Draw Grid Table via jsPDF-autotable
+                        autoTable(doc, {
+                          startY: 72,
+                          theme: 'grid',
+                          head: [
+                            [
+                              "No", 
+                              "Tanggal SPJ", 
+                              "Uraian / Deskripsi Belanja Selaras", 
+                              "Belanja Barang Jasa", 
+                              "Keterangan (Pengait Item Pagu)", 
+                              "Nilai Belanja (Rp)"
+                            ]
+                          ],
+                          body: tableBody,
+                          foot: [
+                            [
+                              "", 
+                              "", 
+                              "JUMLAH TOTAL BELANJA BULAN INI", 
+                              "", 
+                              "", 
+                              `Rp ${formatIDR(currentMonthTotalSum)}`
+                            ]
+                          ],
+                          headStyles: {
+                            fillColor: [241, 245, 249], // Slate 100
+                            textColor: [15, 23, 42],     // Slate 900
+                            fontStyle: 'bold',
+                            fontSize: 8.5,
+                            halign: 'center',
+                            valign: 'middle'
+                          },
+                          footStyles: {
+                            fillColor: [241, 245, 249],
+                            textColor: [15, 23, 42],
+                            fontStyle: 'bold',
+                            fontSize: 9,
+                            halign: 'left'
+                          },
+                          styles: {
+                            font: 'helvetica',
+                            fontSize: 8.5,
+                            cellPadding: 3.5,
+                            textColor: [51, 65, 85],
+                            overflow: 'linebreak'
+                          },
+                          columnStyles: {
+                            0: { halign: 'center', cellWidth: 10 },
+                            1: { halign: 'center', cellWidth: 25 },
+                            2: { halign: 'left', cellWidth: 110 },
+                            3: { halign: 'left', cellWidth: 60 },
+                            4: { halign: 'left', cellWidth: 55 },
+                            5: { halign: 'right', cellWidth: 40, fontStyle: 'bold' }
+                          },
+                          margin: { left: 15, right: 15, top: 25, bottom: 42 },
+                          didDrawPage: (data) => {
+                            if (data.pageNumber > 1) {
+                              // Running headers for subsequent pages
+                              doc.setFont("helvetica", "bold");
+                              doc.setFontSize(8);
+                              doc.setTextColor(71, 85, 105);
+                              doc.text(`LAPORAN REALISASI SPJ ${subTabLabel.toUpperCase()} RSUD dr. H. JUSUF SK`, 15, 12);
+                              doc.setFont("helvetica", "normal");
+                              doc.text(`Bulan Laporan: ${formattedMonth.toUpperCase()} 2026`, 315, 12, { align: 'right' });
+                              
+                              doc.setDrawColor(203, 213, 225);
+                              doc.setLineWidth(0.3);
+                              doc.line(15, 15, 315, 15);
+                            }
+                          },
+                          didParseCell: (data) => {
+                            // Dynamic font size adjustment for long text in cells to prevent table row overflow and keep cell wrapping clean
+                            if (data.section === 'body') {
+                              const txt = Array.isArray(data.cell.text) ? data.cell.text.join(' ') : String(data.cell.text || '');
+                              if (txt.length > 120) {
+                                data.cell.styles.fontSize = 6.0;
+                                data.cell.styles.cellPadding = 2.0;
+                              } else if (txt.length > 85) {
+                                data.cell.styles.fontSize = 7.0;
+                                data.cell.styles.cellPadding = 2.5;
+                              } else if (txt.length > 45) {
+                                data.cell.styles.fontSize = 7.5;
+                                data.cell.styles.cellPadding = 3.0;
+                              }
+                            }
+                            if (data.section === 'foot') {
+                              if (data.column.index === 2) {
+                                data.cell.styles.halign = 'right';
+                                data.cell.styles.fontStyle = 'bold';
+                              }
+                              if (data.column.index === 5) {
+                                data.cell.styles.halign = 'right';
+                                data.cell.styles.textColor = [79, 70, 229]; // Indigo-600 focus
+                              }
+                            }
+                          }
+                        });
+
+                        // Indonesian signature block placement
+                        let finalY = (doc as any).lastAutoTable.finalY + 12;
+                        
+                        if (finalY > 165) {
+                          doc.addPage();
+                          finalY = 25;
+                        }
+
+                        doc.setFont("helvetica", "normal");
+                        doc.setFontSize(8.5);
+                        doc.setTextColor(30, 41, 59);
+
+                        // Approval "Mengetahui" Block (Left Position)
+                        doc.text("Mengetahui,", 15, finalY);
+                        doc.text("Pejabat Teknis Kegiatan", 15, finalY + 5);
+                        doc.text("( _______________________________________ )", 15, finalY + 28);
+                        doc.text("NIP.", 15, finalY + 33);
+
+                        // Approval "Bendahara" Block (Right Position)
+                        const signatureDate = `Tarakan, ${formattedMonth} 2026`;
+                        doc.text(signatureDate, 200, finalY);
+                        doc.text("Bendahara Pengeluaran Pembantu", 200, finalY + 5);
+                        doc.text("( _______________________________________ )", 200, finalY + 28);
+                        doc.text("NIP.", 200, finalY + 33);
+
+                        // Beautiful Page number headers and line footnotes
+                        const pageCount = (doc as any).internal.getNumberOfPages();
+                        for (let i = 1; i <= pageCount; i++) {
+                          doc.setPage(i);
+                          doc.setFontSize(8);
+                          doc.setTextColor(148, 163, 184); // slate-400
+                          
+                          doc.setDrawColor(241, 245, 249);
+                          doc.line(15, 199, 315, 199);
+                          
+                          doc.text("SIPANDA ANGGARAN • RSUD dr. H. JUSUF SK (BLUD MODUL)", 15, 204);
+                          doc.text(`Halaman ${i} dari ${pageCount}`, 315, 204, { align: 'right' });
+                        }
+
+                        doc.save(`SIPANDA_LAPORAN_SPJ_${bludSubTab}_${formattedMonth}_2026.pdf`);
+                        triggerToast('PDF Laporan SPJ Terunggah dan Terunduh dengan Format F4.', 'success');
+                      } catch (err: any) {
+                        console.error(err);
+                        triggerToast('Gagal memproses ekspor PDF: ' + err.message, 'error');
+                      }
+                    };
+
                     return (
                       <div className="space-y-8 animate-fadeIn">
                         
@@ -4606,199 +6056,408 @@ export default function App() {
                           <div className="space-y-8 animate-fadeIn">
                             
                             {/* TOP META CARD */}
-                            <div className="bg-gradient-to-br from-slate-950 to-indigo-950 border border-slate-800 p-6 md:p-8 rounded-[2rem] shadow-xl relative overflow-hidden">
+                            <div className={`p-6 md:p-8 rounded-[2rem] shadow-xl relative overflow-hidden border transition-all ${
+                              theme === 'light' 
+                                ? 'bg-gradient-to-br from-indigo-50 via-white to-indigo-50/30 border-slate-200/80 shadow-indigo-100/40' 
+                                : 'bg-gradient-to-br from-slate-950 to-indigo-950 border-slate-800 shadow-2xl'
+                            }`}>
                               <div className="relative z-10">
-                                <span className="text-[10px] bg-indigo-600/20 text-indigo-400 border border-indigo-500/20 px-2.5 py-1 rounded-full font-black uppercase tracking-wider inline-block mb-3">SIPANDA BLUD MODUL</span>
-                                <h3 className="text-xl md:text-2xl font-black text-white leading-tight">Pendidikan dan Pelatihan Pegawai (RSUD dr H JUSUF SK)</h3>
-                                <p className="text-xs text-slate-400 font-semibold mt-2">Kegiatan: <strong className="text-indigo-400 font-bold">00.01.01.05.09</strong> • Sumber Dana: <strong className="text-indigo-400 font-bold">Jasa Layanan BLUD</strong> • Tahun Anggaran 2026</p>
+                                <span className={`text-[10px] px-2.5 py-1 rounded-full font-black uppercase tracking-wider inline-block mb-3 border ${
+                                  theme === 'light' 
+                                    ? 'bg-indigo-50 text-indigo-600 border-indigo-200/65' 
+                                    : 'bg-indigo-600/20 text-indigo-400 border-indigo-500/20'
+                                }`}>
+                                  SIPANDA BLUD MODUL
+                                </span>
+                                <h3 className={`text-xl md:text-2xl font-black leading-tight ${
+                                  theme === 'light' ? 'text-slate-900' : 'text-white'
+                                }`}>
+                                  Pendidikan dan Pelatihan Pegawai (RSUD dr H JUSUF SK)
+                                </h3>
+                                <p className={`text-xs font-semibold mt-2 ${
+                                  theme === 'light' ? 'text-slate-600' : 'text-slate-400'
+                                }`}>
+                                  Kegiatan: <strong className={theme === 'light' ? 'text-indigo-600 font-extrabold' : 'text-indigo-450'}>00.01.01.05.09</strong> • Sumber Dana: <strong className={theme === 'light' ? 'text-indigo-600 font-extrabold' : 'text-indigo-450'}>Jasa Layanan BLUD</strong> • Tahun Anggaran 2026
+                                </p>
                               </div>
-                              <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none"></div>
+                              <div className={`absolute top-0 right-0 w-80 h-80 rounded-full blur-3xl pointer-events-none ${
+                                theme === 'light' ? 'bg-indigo-500/10' : 'bg-indigo-500/5'
+                              }`}></div>
                             </div>
 
-                            {/* DUAL COLS TABLES */}
-                            <div className="grid grid-cols-1 xl:grid-cols-1 gap-8">
-                              
-                              {/* TRIWULAN MONITORING TAB */}
-                              <div className="bg-slate-950 border border-slate-800 p-6 md:p-8 rounded-[2rem] shadow-2xl">
-                                <div className="flex justify-between items-center mb-6">
-                                  <h4 className="font-extrabold text-white text-base uppercase tracking-wider flex items-center gap-2">
-                                    <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
-                                    <span>Monitoring Alokasi Anggaran Per Triwulan 2026</span>
-                                  </h4>
-                                  <button
-                                    onClick={() => window.print()}
-                                    className="px-3.5 py-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-xs font-black text-slate-200 hover:text-white rounded-xl transition-all cursor-pointer flex items-center gap-1.5 no-print"
-                                  >
-                                    <Printer className="w-3.5 h-3.5 text-indigo-400" />
-                                    <span>Cetak Lembar Monitoring</span>
-                                  </button>
-                                </div>
+                             {/* DUAL COLS TABLES */}
+                             <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
+                               
+                               {/* TRIWULAN MONITORING TAB */}
+                               <div id="blud-triwulan" className={`p-6 md:p-8 rounded-[2rem] border transition-all col-span-1 xl:col-span-6 ${
+                                 theme === 'light'
+                                   ? 'bg-white border-slate-200/85 shadow-lg shadow-slate-100'
+                                   : 'bg-slate-950 border-slate-800 shadow-2xl'
+                               }`}>
+                                 <div className="flex justify-between items-center mb-6">
+                                   <h4 className={`font-extrabold text-base uppercase tracking-wider flex items-center gap-2 ${
+                                     theme === 'light' ? 'text-slate-900' : 'text-white'
+                                   }`}>
+                                     <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                                     <span>Monitoring Alokasi Anggaran Per Triwulan 2026</span>
+                                   </h4>
+                                   <button
+                                     onClick={() => initiatePrint('Monitoring Alokasi Anggaran BLUD Per Triwulan 2026', 'blud-triwulan')}
+                                     className={`px-3.5 py-2 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center gap-1.5 no-print border ${
+                                       theme === 'light'
+                                         ? 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700 hover:text-slate-900 shadow-sm'
+                                         : 'bg-slate-900 hover:bg-slate-850 border-slate-800 text-slate-200 hover:text-white'
+                                     }`}
+                                   >
+                                     <Printer className="w-3.5 h-3.5 text-indigo-500" />
+                                     <span>Cetak Lembar Monitoring</span>
+                                   </button>
+                                 </div>
+ 
+                                 <div className="overflow-x-auto">
+                                   <table className="w-full text-left">
+                                     <thead>
+                                       <tr className={`border-b text-[10px] uppercase tracking-widest font-black ${
+                                         theme === 'light' ? 'border-slate-100 text-slate-500' : 'border-slate-800 text-slate-400'
+                                       }`}>
+                                         <th className="py-4 px-6 w-16">No</th>
+                                         <th className="py-4 px-6">Triwulan Kegiatan</th>
+                                         <th className="py-4 px-6 text-right">Rencana Pagu / Alokasi</th>
+                                         <th className="py-4 px-6 text-right">Realisasi SPJ Terkumpul</th>
+                                         <th className="py-4 px-6 text-right">Sisa Alokasi Terbuka</th>
+                                         <th className="py-4 px-6 text-right w-36">Prosentase SPJ</th>
+                                       </tr>
+                                     </thead>
+                                     <tbody className={`divide-y font-sans text-xs ${
+                                       theme === 'light' ? 'divide-slate-100' : 'divide-slate-900'
+                                     }`}>
+                                       {twAlokasi.map((alok, idx) => {
+                                         const real = twRealisasi[idx];
+                                         const sisa = alok - real;
+                                         const percent = alok ? Math.round((real / alok) * 100) : 0;
+                                         return (
+                                           <tr key={idx} className={`transition-colors ${
+                                             theme === 'light' 
+                                               ? 'hover:bg-slate-50/50 text-slate-700' 
+                                               : 'hover:bg-slate-900/30 text-slate-300'
+                                           }`}>
+                                             <td className="py-4 px-6 font-bold text-slate-450">{idx + 1}</td>
+                                             <td className={`py-4 px-6 font-bold ${theme === 'light' ? 'text-slate-900' : 'text-slate-100'}`}>Triwulan {idx === 0 ? 'I (Jan - Mar)' : idx === 1 ? 'II (Apr - Jun)' : idx === 2 ? 'III (Jul - Sep)' : 'IV (Okt - Des)'}</td>
+                                             <td className={`py-4 px-6 text-right font-mono font-bold ${theme === 'light' ? 'text-indigo-650' : 'text-indigo-400'}`}>Rp {formatIDR(alok)}</td>
+                                             <td className={`py-4 px-6 text-right font-mono font-bold ${theme === 'light' ? 'text-purple-650' : 'text-purple-400'}`}>Rp {formatIDR(real)}</td>
+                                             <td className={`py-4 px-6 text-right font-mono font-bold ${
+                                               alok > 0 && sisa < (0.1 * alok)
+                                                 ? 'animate-danger-blink bg-red-500/5'
+                                                 : theme === 'light' ? 'text-emerald-700' : 'text-emerald-400'
+                                             }`}>Rp {formatIDR(sisa)}</td>
+                                             <td className="py-4 px-6 text-right">
+                                               <span className={`px-2.5 py-1 rounded-full text-[10px] font-black inline-block ${
+                                                 percent > 85 
+                                                   ? (theme === 'light' ? 'bg-rose-50 text-rose-650 border border-rose-200' : 'bg-rose-500/10 text-rose-450 border border-rose-500/10') 
+                                                   : percent > 45 
+                                                     ? (theme === 'light' ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-amber-500/10 text-amber-450 border border-amber-500/10') 
+                                                     : (theme === 'light' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-emerald-500/10 text-emerald-450 border border-emerald-500/10')
+                                               }`}>
+                                                 {percent}%
+                                               </span>
+                                             </td>
+                                           </tr>
+                                         );
+                                       })}
+                                       {/* Total Triwulan row */}
+                                       <tr className={`font-bold border-t-2 ${
+                                         theme === 'light' 
+                                           ? 'bg-slate-50/80 text-slate-900 border-slate-200' 
+                                           : 'bg-slate-900/40 text-white border-slate-800'
+                                       }`}>
+                                         <td colSpan={2} className="py-5 px-6 uppercase tracking-wider text-right font-black">Jumlah Total:</td>
+                                         <td className={`py-5 px-6 text-right font-mono font-black text-sm ${theme === 'light' ? 'text-indigo-700' : 'text-indigo-300'}`}>Rp {formatIDR(twTotalAlokasi)}</td>
+                                         <td className={`py-5 px-6 text-right font-mono font-black text-sm ${theme === 'light' ? 'text-purple-700' : 'text-purple-300'}`}>Rp {formatIDR(twTotalRealisasi)}</td>
+                                         <td className={`py-5 px-6 text-right font-mono font-black text-sm ${theme === 'light' ? 'text-emerald-750' : 'text-emerald-300'}`}>Rp {formatIDR(twTotalAlokasi - twTotalRealisasi)}</td>
+                                         <td className="py-5 px-6 text-right">
+                                           <span className={`px-3 py-1 rounded-lg font-black font-sans text-xs border ${
+                                             theme === 'light' 
+                                               ? 'bg-indigo-100/55 text-indigo-700 border-indigo-200' 
+                                               : 'bg-indigo-900/40 text-indigo-300 border-indigo-500/20'
+                                           }`}>
+                                             {twTotalAlokasi ? Math.round((twTotalRealisasi / twTotalAlokasi) * 100) : 0}%
+                                           </span>
+                                         </td>
+                                       </tr>
+                                     </tbody>
+                                   </table>
+                                 </div>
+                               </div>
 
-                                <div className="overflow-x-auto">
-                                  <table className="w-full text-left">
-                                    <thead>
-                                      <tr className="border-b border-slate-800 text-[10px] text-slate-400 uppercase tracking-widest font-black">
-                                        <th className="py-4 px-6 w-16">No</th>
-                                        <th className="py-4 px-6">Triwulan Kegiatan</th>
-                                        <th className="py-4 px-6 text-right">Rencana Pagu / Alokasi</th>
-                                        <th className="py-4 px-6 text-right">Realisasi SPJ Terkumpul</th>
-                                        <th className="py-4 px-6 text-right">Sisa Alokasi Terbuka</th>
-                                        <th className="py-4 px-6 text-right w-36">Prosentase SPJ</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-900 font-sans text-xs">
-                                      {twAlokasi.map((alok, idx) => {
-                                        const real = twRealisasi[idx];
-                                        const sisa = alok - real;
-                                        const percent = alok ? Math.round((real / alok) * 100) : 0;
-                                        return (
-                                          <tr key={idx} className="hover:bg-slate-900/30 transition-colors text-slate-300">
-                                            <td className="py-4 px-6 font-bold text-slate-400">{idx + 1}</td>
-                                            <td className="py-4 px-6 font-bold text-slate-100">Triwulan {idx === 0 ? 'I (Jan - Mar)' : idx === 1 ? 'II (Apr - Jun)' : idx === 2 ? 'III (Jul - Sep)' : 'IV (Okt - Des)'}</td>
-                                            <td className="py-4 px-6 text-right font-mono font-bold text-indigo-400">Rp {formatIDR(alok)}</td>
-                                            <td className="py-4 px-6 text-right font-mono font-bold text-purple-400">Rp {formatIDR(real)}</td>
-                                            <td className="py-4 px-6 text-right font-mono font-bold text-emerald-400">Rp {formatIDR(sisa)}</td>
-                                            <td className="py-4 px-6 text-right">
-                                              <span className={`px-2.5 py-1 rounded-full text-[10px] font-black inline-block ${percent > 85 ? 'bg-rose-500/10 text-rose-450 border border-rose-500/10' : percent > 45 ? 'bg-amber-500/10 text-amber-450 border border-amber-500/10' : 'bg-emerald-500/10 text-emerald-450 border border-emerald-500/10'}`}>
-                                                {percent}%
-                                              </span>
-                                            </td>
-                                          </tr>
-                                        );
-                                      })}
-                                      {/* Total Triwulan row */}
-                                      <tr className="bg-slate-900/40 font-bold text-white border-t-2 border-slate-800">
-                                        <td colSpan={2} className="py-5 px-6 uppercase tracking-wider text-right font-black">Jumlah Total:</td>
-                                        <td className="py-5 px-6 text-right font-mono font-black text-indigo-300 text-sm">Rp {formatIDR(twTotalAlokasi)}</td>
-                                        <td className="py-5 px-6 text-right font-mono font-black text-purple-300 text-sm">Rp {formatIDR(twTotalRealisasi)}</td>
-                                        <td className="py-5 px-6 text-right font-mono font-black text-emerald-300 text-sm">Rp {formatIDR(twTotalAlokasi - twTotalRealisasi)}</td>
-                                        <td className="py-5 px-6 text-right">
-                                          <span className="px-3 py-1 bg-indigo-900/40 text-indigo-300 rounded-lg border border-indigo-500/20 font-black font-sans text-xs">
-                                            {twTotalAlokasi ? Math.round((twTotalRealisasi / twTotalAlokasi) * 100) : 0}%
-                                          </span>
-                                        </td>
-                                      </tr>
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
+                               {/* VISUAL CHART PLATFORM */}
+                               <div className={`p-6 md:p-8 rounded-[2rem] border transition-all flex flex-col justify-between col-span-1 xl:col-span-6 ${
+                                 theme === 'light'
+                                   ? 'bg-white border-slate-200/85 shadow-lg shadow-slate-100'
+                                   : 'bg-slate-950 border-slate-800 shadow-2xl shadow-indigo-950/20'
+                               }`}>
+                                 <div className="w-full">
+                                   <div className="flex justify-between items-center mb-6">
+                                     <div>
+                                       <h4 className={`font-extrabold text-base uppercase tracking-wider flex items-center gap-2 ${
+                                         theme === 'light' ? 'text-slate-900' : 'text-white'
+                                       }`}>
+                                         <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                                         <span>Dashboard Visualisasi Penyerapan Anggaran</span>
+                                       </h4>
+                                       <p className="text-[10px] text-slate-500 mt-1 font-bold">Analisis interaktif persentase realisasi anggaran BLUD</p>
+                                     </div>
+                                   </div>
 
-                              {/* DETAILED DRILL DOWN PER ITEM MATRIX TABLE */}
-                              <div className="bg-slate-950 border border-slate-800 p-6 md:p-8 rounded-[2rem] shadow-2xl">
-                                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-                                  <div>
-                                    <h4 className="font-extrabold text-white text-base uppercase tracking-wider flex items-center gap-2">
-                                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                                      <span>Rincian Realisasi SPJ Per Item Belanja (12 Bulan)</span>
-                                    </h4>
-                                    <p className="text-[10px] text-slate-500 mt-1 font-bold">Matriks alokasi & penyerapan SPJ bulanan yang diupdate secara real-time dari data Rekapitulasi</p>
-                                  </div>
-                                  <button
-                                    onClick={() => {
-                                      let csv = "Uraian Item,Kode Rekening,Pagu Anggaran,Jan,Feb,Mar,Apr,Mei,Jun,Jul,Ags,Sep,Okt,Nov,Des,Total SPJ,Sisa\n";
-                                      itemsNama.forEach((nama, idx) => {
-                                        const values = calculatedBludMonthlyValues[idx];
-                                        const paguItem = itemsPagu[idx];
-                                        const totalItemSPJ = values.reduce((a,b)=>a+b, 0);
-                                        csv += `"${nama}","${itemsKode[idx]}",${paguItem},${values.join(',')},${totalItemSPJ},${paguItem - totalItemSPJ}\n`;
-                                      });
-                                      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-                                      const link = document.createElement("a");
-                                      link.href = URL.createObjectURL(blob);
-                                      link.setAttribute("download", "Rincian_Matriks_SPJ_BLUD_SIPANDA.csv");
-                                      document.body.appendChild(link);
-                                      link.click();
-                                      document.body.removeChild(link);
-                                      triggerToast('Matriks rincian SPJ bulanan berhasil diexport!');
-                                    }}
-                                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 font-extrabold text-xs text-white rounded-xl transition-all cursor-pointer flex items-center gap-1.5 no-print"
-                                  >
-                                    <Download className="w-3.5 h-3.5" />
-                                    <span>Export Matriks CSV</span>
-                                  </button>
-                                </div>
+                                   {/* Sub tab selectors for Chart */}
+                                   <div className="flex flex-wrap gap-2 mb-6">
+                                     {[
+                                       { id: 'triwulan', label: 'Triwulan', icon: LayoutDashboard },
+                                       { id: 'monthly', label: 'Tren Bulanan', icon: Calendar },
+                                       { id: 'items', label: 'Per Item', icon: FileSpreadsheet },
+                                       { id: 'categories', label: 'Kategori', icon: BookOpen }
+                                     ].map(tab => {
+                                       const Icon = tab.icon;
+                                       const isActive = bludChartTab === tab.id;
+                                       return (
+                                         <button
+                                           key={tab.id}
+                                           onClick={() => setBludChartTab(tab.id as any)}
+                                           className={`px-3 py-1.5 rounded-xl text-[11px] font-black cursor-pointer flex items-center gap-1.5 transition-all
+                                             ${isActive 
+                                               ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20' 
+                                               : (theme === 'light'
+                                                 ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-150 bg-slate-50 border border-slate-200'
+                                                 : 'text-slate-400 hover:text-white hover:bg-slate-900 bg-slate-950 border border-slate-800'
+                                               )
+                                             }
+                                           `}
+                                         >
+                                           <Icon className="w-3.5 h-3.5" />
+                                           <span>{tab.label}</span>
+                                         </button>
+                                       );
+                                     })}
+                                   </div>
 
-                                <div className="overflow-x-auto overflow-y-hidden rounded-2xl border border-slate-900">
-                                  <table className="w-full text-left font-sans text-[11px] table-fixed min-w-[1400px]">
-                                    <thead>
-                                      <tr className="bg-slate-900 text-slate-400 font-black border-b border-sidebar uppercase text-[9px] tracking-wider">
-                                        <th className="py-3 px-3 w-56">Uraian / Deskripsi Item</th>
-                                        <th className="py-3 px-3 w-40">Pagu Anggaran</th>
-                                        {monthNames.map(m => (
-                                          <th key={m} className="py-3 px-2 text-right w-20">{m.slice(0,3)}</th>
-                                        ))}
-                                        <th className="py-3 px-3 text-right w-28 text-white">Total SPJ</th>
-                                        <th className="py-3 px-3 text-right w-28 text-emerald-400">Sisa Pagu</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-900 text-slate-300 font-bold">
-                                      {itemsNama.map((nama, itemIdx) => {
-                                        const values = calculatedBludMonthlyValues[itemIdx] || Array(12).fill(0);
-                                        const pagu = itemsPagu[itemIdx] || 0;
-                                        const totalSPJ = values.reduce((a, b) => a + b, 0);
-                                        const sisa = pagu - totalSPJ;
-                                        return (
-                                          <tr key={itemIdx} className="hover:bg-slate-900/20 text-[11px]">
-                                            <td className="py-3.5 px-3 whitespace-normal break-words">
-                                              <p className="text-[11px] text-slate-100 font-semibold">{nama}</p>
-                                              <span className="text-[8px] text-slate-500 font-semibold block mt-0.5">{itemsKode[itemIdx]}</span>
-                                            </td>
-                                            <td className="py-3.5 px-3 font-mono text-xs text-indigo-400">Rp {formatIDR(pagu)}</td>
-                                            {values.map((v, mIdx) => (
-                                              <td key={mIdx} className={`py-3.5 px-2 text-right font-mono ${v > 0 ? 'text-purple-400 font-black' : 'text-slate-600 font-light'}`}>
-                                                {v > 0 ? formatIDR(v) : '-'}
-                                              </td>
-                                            ))}
-                                            <td className="py-3.5 px-3 text-right font-mono text-white bg-slate-900/20">Rp {formatIDR(totalSPJ)}</td>
-                                            <td className="py-3.5 px-3 text-right font-mono text-emerald-400 bg-emerald-500/5">Rp {formatIDR(sisa)}</td>
-                                          </tr>
-                                        );
-                                      })}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
+                                   {/* Recharts container */}
+                                   <div className="h-64 w-full flex items-center justify-center">
+                                     <ResponsiveContainer width="100%" height="100%">
+                                       {(() => {
+                                         if (bludChartTab === 'triwulan') {
+                                           return (
+                                             <BarChart data={chartTriwulanData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'light' ? '#f1f5f9' : '#1e293b'} />
+                                               <XAxis dataKey="name" stroke={theme === 'light' ? '#64748b' : '#94a3b8'} fontFamily="Inter" fontSize={10} fontWeight={600} />
+                                               <YAxis stroke={theme === 'light' ? '#64748b' : '#94a3b8'} fontFamily="Inter" fontSize={9} fontWeight={600} tickFormatter={(val) => `Rp ${(val / 1000000).toFixed(0)}M`} />
+                                               <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(99, 102, 241, 0.05)' }} />
+                                               <Bar dataKey="Rencana Alokasi" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                                               <Bar dataKey="Realisasi SPJ" fill="#a855f7" radius={[4, 4, 0, 0]} />
+                                             </BarChart>
+                                           );
+                                         } else if (bludChartTab === 'monthly') {
+                                           return (
+                                             <AreaChart data={chartMonthlyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                               <defs>
+                                                 <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
+                                                   <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4}/>
+                                                   <stop offset="95%" stopColor="#6366f1" stopOpacity={0.0}/>
+                                                 </linearGradient>
+                                               </defs>
+                                               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'light' ? '#f1f5f9' : '#1e293b'} />
+                                               <XAxis dataKey="name" stroke={theme === 'light' ? '#64748b' : '#94a3b8'} fontFamily="Inter" fontSize={10} fontWeight={600} />
+                                               <YAxis stroke={theme === 'light' ? '#64748b' : '#94a3b8'} fontFamily="Inter" fontSize={9} fontWeight={600} tickFormatter={(val) => `Rp ${(val / 1000000).toFixed(0)}Jt`} />
+                                               <Tooltip content={<CustomTooltip />} />
+                                               <Area type="monotone" dataKey="Realisasi Bulanan" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#areaGradient)" />
+                                             </AreaChart>
+                                           );
+                                         } else if (bludChartTab === 'items') {
+                                           return (
+                                             <BarChart data={chartItemsData} layout="vertical" margin={{ top: 0, right: 10, left: 10, bottom: 0 }}>
+                                               <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={theme === 'light' ? '#f1f5f9' : '#1e293b'} />
+                                               <XAxis type="number" stroke={theme === 'light' ? '#64748b' : '#94a3b8'} fontFamily="Inter" fontSize={9} fontWeight={600} tickFormatter={(val) => `${val}%`} />
+                                               <YAxis type="category" dataKey="name" stroke={theme === 'light' ? '#64748b' : '#94a3b8'} fontFamily="Inter" fontSize={8} fontWeight={600} width={80} />
+                                               <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(99, 102, 241, 0.05)' }} />
+                                               <Bar dataKey="Persentase" fill="#10b981" radius={[0, 4, 4, 0]} background={{ fill: theme === 'light' ? '#f1f5f9' : '#1e293b', radius: 4 }} />
+                                             </BarChart>
+                                           );
+                                         } else {
+                                           return (
+                                             <BarChart data={chartCategoriesData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'light' ? '#f1f5f9' : '#1e293b'} />
+                                               <XAxis dataKey="name" stroke={theme === 'light' ? '#64748b' : '#94a3b8'} fontFamily="Inter" fontSize={10} fontWeight={600} />
+                                               <YAxis stroke={theme === 'light' ? '#64748b' : '#94a3b8'} fontFamily="Inter" fontSize={9} fontWeight={600} tickFormatter={(val) => `Rp ${(val / 1000000).toFixed(0)}M`} />
+                                               <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(99, 102, 241, 0.05)' }} />
+                                               <Bar dataKey="value" name="Realisasi" radius={[4, 4, 0, 0]}>
+                                                 {chartCategoriesData.map((entry, index) => (
+                                                   <Cell key={`cell-${index}`} fill={entry.name === 'Perjadin' ? '#a855f7' : entry.name === 'Belanja Kontri.' ? '#3b82f6' : entry.name === 'Honor Panitia' ? '#f59e0b' : '#ef4444'} />
+                                                 ))}
+                                               </Bar>
+                                             </BarChart>
+                                           );
+                                         }
+                                       })()}
+                                     </ResponsiveContainer>
+                                   </div>
+                                 </div>
+                               </div>
 
-                            </div>
+                               {/* DETAILED DRILL DOWN PER ITEM MATRIX TABLE */}
+                               <div className={`p-6 md:p-8 rounded-[2rem] border transition-all xl:col-span-12 ${
+                                 theme === 'light'
+                                   ? 'bg-white border-slate-200/85 shadow-lg shadow-slate-100'
+                                   : 'bg-slate-950 border-slate-800 shadow-2xl'
+                               }`}>
+                                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                                   <div>
+                                     <h4 className={`font-extrabold text-base uppercase tracking-wider flex items-center gap-2 ${
+                                       theme === 'light' ? 'text-slate-900' : 'text-white'
+                                     }`}>
+                                       <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                       <span>Rincian Realisasi SPJ Per Item Belanja (12 Bulan)</span>
+                                     </h4>
+                                     <p className={`text-[10px] mt-1 font-bold ${
+                                       theme === 'light' ? 'text-slate-505' : 'text-slate-500'
+                                     }`}>Matriks alokasi & penyerapan SPJ bulanan yang diupdate secara real-time dari data Rekapitulasi</p>
+                                   </div>
+                                   <button
+                                     onClick={() => {
+                                       let csv = "Uraian Item,Kode Rekening,Pagu Anggaran,Jan,Feb,Mar,Apr,Mei,Jun,Jul,Ags,Sep,Okt,Nov,Des,Total SPJ,Sisa\n";
+                                       itemsNama.forEach((nama, idx) => {
+                                         const values = calculatedBludMonthlyValues[idx];
+                                         const paguItem = itemsPagu[idx];
+                                         const totalItemSPJ = values.reduce((a,b)=>a+b, 0);
+                                         csv += `"${nama}","${itemsKode[idx]}",${paguItem},${values.join(',')},${totalItemSPJ},${paguItem - totalItemSPJ}\n`;
+                                       });
+                                       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                                       const link = document.createElement("a");
+                                       link.href = URL.createObjectURL(blob);
+                                       link.setAttribute("download", "Rincian_Matriks_SPJ_BLUD_SIPANDA.csv");
+                                       document.body.appendChild(link);
+                                       link.click();
+                                       document.body.removeChild(link);
+                                       triggerToast('Matriks rincian SPJ bulanan berhasil diexport!');
+                                     }}
+                                     className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 font-extrabold text-xs text-white rounded-xl transition-all cursor-pointer flex items-center gap-1.5 no-print"
+                                   >
+                                     <Download className="w-3.5 h-3.5" />
+                                     <span>Export Matriks CSV</span>
+                                   </button>
+                                 </div>
 
-                          </div>
-                        )}
+                                 <div className={`overflow-x-auto overflow-y-hidden rounded-2xl border ${
+                                   theme === 'light' ? 'border-slate-200/80 bg-slate-50/10' : 'border-slate-900 bg-slate-950/20'
+                                 }`}>
+                                   <table className="w-full text-left font-sans text-[11px] table-fixed min-w-[1400px]">
+                                     <thead>
+                                       <tr className={`font-black border-b uppercase text-[9px] tracking-wider ${
+                                         theme === 'light' 
+                                           ? 'bg-slate-50 text-slate-500 border-slate-200' 
+                                           : 'bg-slate-900 text-slate-400 border-sidebar'
+                                       }`}>
+                                         <th className="py-3 px-3 w-56">Uraian / Deskripsi Item</th>
+                                         <th className="py-3 px-3 w-40">Pagu Anggaran</th>
+                                         {monthNames.map(m => (
+                                           <th key={m} className="py-3 px-2 text-right w-20">{m.slice(0,3)}</th>
+                                         ))}
+                                         <th className={`py-3 px-3 text-right w-28 ${theme === 'light' ? 'text-slate-950 bg-slate-100/50' : 'text-white'}`}>Total SPJ</th>
+                                         <th className={`py-3 px-3 text-right w-28 ${theme === 'light' ? 'text-emerald-705 bg-emerald-50/50' : 'text-emerald-400'}`}>Sisa Pagu</th>
+                                       </tr>
+                                     </thead>
+                                     <tbody className={`divide-y font-bold ${
+                                       theme === 'light' ? 'divide-slate-100 text-slate-700' : 'divide-slate-900 text-slate-300'
+                                     }`}>
+                                       {itemsNama.map((nama, itemIdx) => {
+                                         const values = calculatedBludMonthlyValues[itemIdx] || Array(12).fill(0);
+                                         const pagu = itemsPagu[itemIdx] || 0;
+                                         const totalSPJ = values.reduce((a, b) => a + b, 0);
+                                         const sisa = pagu - totalSPJ;
+                                         return (
+                                           <tr key={itemIdx} className={`text-[11px] ${
+                                             theme === 'light' ? 'hover:bg-slate-50/80' : 'hover:bg-slate-900/20'
+                                           }`}>
+                                             <td className="py-3.5 px-3 whitespace-normal break-words">
+                                               <p className={`text-[11px] font-semibold ${theme === 'light' ? 'text-slate-900' : 'text-slate-100'}`}>{nama}</p>
+                                               <span className="text-[8px] text-slate-500 font-semibold block mt-0.5">{itemsKode[itemIdx]}</span>
+                                             </td>
+                                             <td className={`py-3.5 px-3 font-mono text-xs ${theme === 'light' ? 'text-indigo-650' : 'text-indigo-400'}`}>Rp {formatIDR(pagu)}</td>
+                                             {values.map((v, mIdx) => (
+                                               <td key={mIdx} className={`py-3.5 px-2 text-right font-mono ${
+                                                 v > 0 
+                                                   ? (theme === 'light' ? 'text-purple-700 font-black' : 'text-purple-400 font-black') 
+                                                   : (theme === 'light' ? 'text-slate-350 font-light' : 'text-slate-600 font-light')
+                                               }`}>
+                                                 {v > 0 ? formatIDR(v) : '-'}
+                                               </td>
+                                             ))}
+                                             <td className={`py-3.5 px-3 text-right font-mono ${
+                                               theme === 'light' 
+                                                 ? 'text-slate-950 bg-slate-50/80' 
+                                                 : 'text-white bg-slate-900/20'
+                                             }`}>Rp {formatIDR(totalSPJ)}</td>
+                                             <td className={`py-3.5 px-3 text-right font-mono ${
+                                               theme === 'light' 
+                                                 ? (pagu > 0 && sisa < (0.1 * pagu) ? 'animate-danger-blink bg-red-500/5 font-black' : 'text-emerald-700 bg-emerald-50/50') 
+                                                 : (pagu > 0 && sisa < (0.1 * pagu) ? 'animate-danger-blink bg-red-500/5 font-black' : 'text-emerald-400 bg-emerald-500/5')
+                                             }`}>Rp {formatIDR(sisa)}</td>
+                                           </tr>
+                                         );
+                                       })}
+                                     </tbody>
+                                   </table>
+                                 </div>
+                               </div>
 
-                        {/* SUB TAB LAYOUT: MONTH SELECTION AND DETAIL TABLE (FOR REKAPS) */}
-                        {bludSubTab !== 'monitoring' && (
-                          <div className="space-y-8 animate-fadeIn">
-                            
-                            {/* 12 MONTH SELECTOR BUTTONS */}
-                            <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800 flex flex-wrap gap-1.5 justify-between no-print">
-                              {monthNames.map((m, idx) => {
-                                // Compute total spent in this month for active rekap category
-                                const rowSum = (activeList[idx] || []).reduce((acc, curr) => {
-                                  const val = parseFloat((curr.kolom4 || '0').replace(/[^0-9]/g, '')) || 0;
-                                  return acc + val;
-                                }, 0);
+                             </div>
 
-                                return (
-                                  <button
-                                    key={m}
-                                    onClick={() => setSelectedRekapMonth(idx)}
-                                    className={`px-3 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex-1 min-w-[75px] text-center flex flex-col justify-center items-center
-                                      ${selectedRekapMonth === idx 
-                                        ? 'bg-indigo-600 text-white shadow shadow-indigo-600/20 scale-100' 
-                                        : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
-                                      }
-                                    `}
-                                  >
-                                    <span>{m.slice(0, 3)}</span>
-                                    <span className={`text-[8px] font-mono mt-0.5 block ${selectedRekapMonth === idx ? 'text-indigo-200' : 'text-slate-500'}`}>
-                                      {rowSum > 0 ? `Rp ${formatIDR(rowSum)}` : '-'}
-                                    </span>
-                                  </button>
-                                );
-                              })}
-                            </div>
+                           </div>
+                         )}
+
+                         {/* SUB TAB LAYOUT: MONTH SELECTION AND DETAIL TABLE (FOR REKAPS) */}
+                         {bludSubTab !== 'monitoring' && (
+                           <div className="space-y-8 animate-fadeIn">
+                             
+                             {/* 12 MONTH SELECTOR BUTTONS */}
+                             <div className={`p-3 rounded-2xl border flex flex-wrap gap-1.5 justify-between no-print transition-all ${
+                               theme === 'light'
+                                 ? 'bg-slate-50 border-slate-200'
+                                 : 'bg-slate-950 border-slate-800'
+                             }`}>
+                               {monthNames.map((m, idx) => {
+                                 // Compute total spent in this month for active rekap category
+                                 const rowSum = (activeList[idx] || []).reduce((acc, curr) => {
+                                   const val = parseFloat((curr.kolom4 || '0').replace(/[^0-9]/g, '')) || 0;
+                                   return acc + val;
+                                 }, 0);
+
+                                 return (
+                                   <button
+                                     key={m}
+                                     onClick={() => setSelectedRekapMonth(idx)}
+                                     className={`px-3 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex-1 min-w-[75px] text-center flex flex-col justify-center items-center
+                                       ${selectedRekapMonth === idx 
+                                         ? 'bg-indigo-600 text-white shadow shadow-indigo-600/20 scale-100' 
+                                         : (theme === 'light' 
+                                             ? 'text-slate-500 hover:text-slate-850 hover:bg-slate-200/50' 
+                                             : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
+                                           )
+                                       }
+                                     `}
+                                   >
+                                     <span>{m.slice(0, 3)}</span>
+                                     <span className={`text-[8px] font-mono mt-0.5 block ${
+                                       selectedRekapMonth === idx 
+                                         ? 'text-indigo-200' 
+                                         : (theme === 'light' ? 'text-slate-400' : 'text-slate-500')
+                                     }`}>
+                                       {rowSum > 0 ? `Rp ${formatIDR(rowSum)}` : '-'}
+                                     </span>
+                                   </button>
+                                 );
+                               })}
+                             </div>
 
                             {/* MAIN EDITABLE GRID */}
-                            <div className="bg-slate-950 border border-slate-800 p-6 md:p-8 rounded-[2.5rem] shadow-2xl relative">
+                            <div id="blud-rekap-month" className="bg-slate-950 border border-slate-800 p-6 md:p-8 rounded-[2.5rem] shadow-2xl relative">
                               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                                 <div>
                                   <h4 className="font-extrabold text-white text-base uppercase tracking-wider flex items-center gap-2">
@@ -4835,7 +6494,14 @@ export default function App() {
                                     <span>Ekspor Excel/CSV</span>
                                   </button>
                                   <button
-                                    onClick={() => window.print()}
+                                    onClick={handleExportPDFManual}
+                                    className="bg-red-700 hover:bg-red-600 text-white text-xs font-black px-4 py-2.5 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-lg shadow-red-950/20"
+                                  >
+                                    <FileText className="w-3.5 h-3.5" />
+                                    <span>Ekspor PDF (F4)</span>
+                                  </button>
+                                  <button
+                                    onClick={() => initiatePrint('Rekap Rincian Belanja Bulanan BLUD 2026', 'blud-rekap-month')}
                                     className="bg-slate-900 border border-slate-800 text-slate-200 hover:text-white text-xs font-black px-4 py-2.5 rounded-xl flex items-center gap-1.5 cursor-pointer hover:bg-slate-850"
                                   >
                                     <Printer className="w-3.5 h-3.5" />
@@ -4859,7 +6525,7 @@ export default function App() {
                                       </th>
                                       <th className="py-3 px-4 w-16 text-center">No</th>
                                       <th className="py-3 px-4 w-32">Tanggal SPJ</th>
-                                      <th className="py-3 px-6">Uraian / Deskripsi Belanja Selaras</th>
+                                      <th className="py-3 px-6 w-96 min-w-[280px]">Uraian / Deskripsi Belanja Selaras</th>
                                       <th className="py-3 px-6 w-56 text-right">Nilai Belanja (Rp)</th>
                                       <th className="py-3 px-6 w-60">Belanja Barang Jasa</th>
                                       <th className="py-3 px-6 w-64">Keterangan (Pengait Item Pagu)</th>
@@ -4900,13 +6566,13 @@ export default function App() {
                                               placeholder="DD/MM/YYYY"
                                             />
                                           </td>
-                                          <td className="py-3 px-6">
-                                            <input
-                                              type="text"
+                                          <td className="py-3 px-6 w-96 min-w-[280px]">
+                                            <textarea
                                               value={row.kolom3}
                                               onChange={(e) => handleRowCellChange(index, 'kolom3', e.target.value)}
-                                              className="w-full bg-transparent focus:outline-none focus:bg-slate-900 border-none rounded p-1 text-slate-100 placeholder-slate-600 font-semibold"
+                                              className="w-full bg-transparent focus:outline-none focus:bg-slate-900 border-none rounded p-1 text-slate-100 placeholder-slate-600 font-semibold resize-y overflow-y-auto min-h-[44px] leading-relaxed text-[11px]"
                                               placeholder="Uraian perihal belanja kegiatan..."
+                                              rows={2}
                                             />
                                           </td>
                                           <td className="py-3 px-6 text-right">
@@ -5782,6 +7448,191 @@ export default function App() {
 
         </main>
       </div>
+
+      {/* --- PRINT GUIDE & SANDBOX IFRAME ALERT MODAL --- */}
+      <AnimatePresence>
+        {showPrintGuideModal && (
+          <motion.div 
+            id="modal-print-guide" 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+              className="bg-slate-900 border border-slate-800 rounded-[2rem] w-full max-w-lg overflow-hidden shadow-2xl"
+            >
+              {/* Header */}
+              <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-gradient-to-r from-slate-950 to-indigo-950/40">
+                <div className="flex items-center gap-2.5">
+                  <Printer className="w-5 h-5 text-indigo-400" />
+                  <h3 className="text-sm font-black text-white uppercase tracking-wider">Mempersiapkan Cetak Dokumen</h3>
+                </div>
+                <button 
+                  onClick={() => setShowPrintGuideModal(false)}
+                  className="p-1 px-1.5 bg-slate-850 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 md:p-8 space-y-6">
+                <div>
+                  <span className="text-[10px] bg-amber-500/10 text-amber-500 border border-amber-500/20 px-2.5 py-1 rounded-full font-black uppercase tracking-wider inline-block mb-3 animate-pulse">Peringatan Iframe Sandbox Detected</span>
+                  <h4 className="text-sm font-bold text-slate-100 mb-2 leading-relaxed">
+                    Sistem mendeteksi bahwa Anda sedang menjalankan aplikasi di dalam <strong className="text-indigo-400">Pratinjau Sandbox (Iframe) AI Studio</strong>.
+                  </h4>
+                  <p className="text-xs text-slate-400 leading-relaxed font-semibold">
+                    Kebijakan keamanan peramban (browser security policy) sering kali memblokir pemanggilan printer langsung dari dalam tautan berbingkai (iframe/dialog modal).
+                  </p>
+                </div>
+
+                {/* Steps Section */}
+                <div className="bg-slate-950 border border-slate-850 rounded-2xl p-5 space-y-4">
+                  <h5 className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wide">Cetak Sukses Melalui Langkah Mudah Ini:</h5>
+                  
+                  <div className="flex items-start gap-3">
+                    <div className="w-6 h-6 rounded-lg bg-indigo-500/10 flex items-center justify-center shrink-0 text-xs font-black text-indigo-400">1</div>
+                    <p className="text-xs text-slate-350 leading-relaxed font-semibold">
+                      Klik ikon <strong className="text-white">"Buka di Tab Baru" (panah keluar ↗)</strong> di pojok kanan atas layar pratinjau AI Studio Anda.
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <div className="w-6 h-6 rounded-lg bg-indigo-500/10 flex items-center justify-center shrink-0 text-xs font-black text-indigo-400">2</div>
+                    <p className="text-xs text-slate-350 leading-relaxed font-semibold">
+                      Setelah terbuka di tab baru, klik kembali tombol <strong className="text-white">Cetak Laporan</strong> di atas layar anggaran. Dialog cetak resmi komputer Anda akan langsung muncul dengan ukuran cetakan lanskap yang rapi!
+                    </p>
+                  </div>
+                </div>
+
+                {/* Categorized Print Scope Selection */}
+                <div className="bg-slate-950/60 border border-slate-850 p-5 rounded-2xl space-y-3.5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-3.5 bg-indigo-500 rounded-full"></div>
+                    <label className="text-[10.5px] text-indigo-400 font-extrabold uppercase tracking-widest block">
+                      Opsi Kategori Cetak Laporan
+                    </label>
+                  </div>
+                  <p className="text-[11px] text-slate-400 font-semibold leading-relaxed">
+                    Pilih cakupan modul anggaran yang ingin dicetak secara resmi ke dalam berkas PDF.
+                  </p>
+                  
+                  <div className="grid grid-cols-3 gap-2.5 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setPrintCategoryOption('current')}
+                      className={`px-3 py-3 rounded-xl text-xs font-bold transition-all text-center flex flex-col justify-center items-center gap-1.5 border cursor-pointer active:scale-95
+                        ${printCategoryOption === 'current'
+                          ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-950/45 font-black'
+                          : 'bg-slate-900 border-slate-850 text-slate-400 hover:text-white hover:bg-slate-800'
+                        }
+                      `}
+                    >
+                      <span className="text-[9px] opacity-75 font-extrabold uppercase tracking-wider">Tab Aktif</span>
+                      <span>Otomatis</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setPrintCategoryOption('blud')}
+                      className={`px-3 py-3 rounded-xl text-xs font-bold transition-all text-center flex flex-col justify-center items-center gap-1.5 border cursor-pointer active:scale-95
+                        ${printCategoryOption === 'blud'
+                          ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-950/45 font-black'
+                          : 'bg-slate-900 border-slate-850 text-slate-400 hover:text-white hover:bg-slate-800'
+                        }
+                      `}
+                    >
+                      <span className="text-[9px] opacity-75 font-extrabold uppercase tracking-wider">BLUD Modul</span>
+                      <span>Hanya BLUD</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setPrintCategoryOption('apbd')}
+                      className={`px-3 py-3 rounded-xl text-xs font-bold transition-all text-center flex flex-col justify-center items-center gap-1.5 border cursor-pointer active:scale-95
+                        ${printCategoryOption === 'apbd'
+                          ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-950/45 font-black'
+                          : 'bg-slate-900 border-slate-850 text-slate-400 hover:text-white hover:bg-slate-800'
+                        }
+                      `}
+                    >
+                      <span className="text-[9px] opacity-75 font-extrabold uppercase tracking-wider">APBD Modul</span>
+                      <span>Hanya APBD</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Sub-note */}
+                <p className="text-[10px] text-slate-500 italic leading-snug">
+                  *Lembar cetak atau output PDF telah dirancang secara landscape profesional, menyalin tabel matrix anggaran, menyinkronkan data nominal rupiah, dan menghilangkan tombol menu non-print otomatis secara otomatis.
+                </p>
+              </div>
+
+              {/* Action buttons */}
+              <div className="p-4 bg-slate-950 border-t border-slate-800/60 flex flex-wrap items-center justify-end gap-2.5">
+                <button
+                  onClick={() => setShowPrintGuideModal(false)}
+                  className="px-4 py-2.5 bg-slate-900 border border-slate-800 text-slate-400 hover:text-white rounded-xl text-xs font-bold cursor-pointer hover:bg-slate-850"
+                >
+                  Batal / Tutup
+                </button>
+                <button
+                  onClick={() => {
+                    let finalModuleName = printModuleName;
+                    let finalElementId = printElementId;
+
+                    if (printCategoryOption === 'blud') {
+                      finalModuleName = 'Laporan Rincian Anggaran BLUD RSUD dr. H. Jusuf SK';
+                      finalElementId = 'tab-blud';
+                      setActiveAnggaranTab('blud');
+                    } else if (printCategoryOption === 'apbd') {
+                      finalModuleName = 'Laporan Rincian Anggaran APBD RSUD dr. H. Jusuf SK';
+                      finalElementId = 'tab-apbd';
+                      setActiveAnggaranTab('apbd');
+                    }
+
+                    setShowPrintGuideModal(false);
+                    triggerToast(`Membuka lembar cetak ${printCategoryOption !== 'current' ? printCategoryOption.toUpperCase() + ' ' : ''}di jendela luar...`, "info");
+                    setTimeout(() => {
+                      executePrintLogic(finalModuleName, finalElementId);
+                    }, 150);
+                  }}
+                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black shadow-lg shadow-indigo-950/20 cursor-pointer inline-flex items-center gap-1.5"
+                >
+                  <Printer className="w-3.5 h-3.5 text-indigo-200" />
+                  <span>Buka Jendela Cetak Baru</span>
+                </button>
+                <button
+                  onClick={() => {
+                    if (printCategoryOption === 'blud') {
+                      setActiveAnggaranTab('blud');
+                    } else if (printCategoryOption === 'apbd') {
+                      setActiveAnggaranTab('apbd');
+                    }
+
+                    setShowPrintGuideModal(false);
+                    triggerToast("Memaksa dialog cetak langsung...", "info");
+                    setTimeout(() => {
+                      window.focus();
+                      window.print();
+                    }, 200);
+                  }}
+                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold cursor-pointer inline-flex items-center gap-1.5 border border-slate-700"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Cetak Langsung (Iframe)</span>
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* --- ADD PORTABLE REPORT MODAL --- */}
       <AnimatePresence>

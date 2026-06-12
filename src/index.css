@@ -148,8 +148,178 @@ html.light #sidebar .bg-slate-900 {
 
 /* Print CSS Styles */
 @media print {
-  .no-print {
+  /* Halaman cetak otomatis landscape dan margin minimum */
+  @page {
+    size: landscape;
+    margin: 8mm 12mm;
+  }
+
+  /* Elemen-elemen yang harus dihilangkan saat mencetak */
+  .no-print,
+  #sidebar,
+  #top-bar,
+  #toast-overlay,
+  button,
+  .btn,
+  input[type="checkbox"],
+  select,
+  .month-input::placeholder,
+  [title="PDF Live Browser Native Frame"] {
     display: none !important;
+  }
+
+  /* Konstruksi layout tanpa pembatasan scroll atau viewport height */
+  html, body, #root, #app-viewport, #main-frame, #section-scroller, main, .flex-1, div[class*="overflow-"] {
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    display: block !important;
+    position: static !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+
+  /* Reset layout kontainer pembungkus utama */
+  main {
+    padding: 0 !important;
+  }
+
+  /* Kartu, panel, sub-tab diubah menjadi berlatar putih dengan pembatas abu-abu gelap solid */
+  .card, 
+  div[class*="bg-slate-"], 
+  div[class*="bg-indigo-"], 
+  div[class*="bg-purple-"], 
+  div[class*="bg-emerald-"], 
+  div[class*="bg-white"],
+  div[class*="bg-teal-"],
+  div[class*="bg-rose-"],
+  #tab-apbd,
+  #tab-blud,
+  #tab-blud-traditional,
+  div.rounded-3xl,
+  div.rounded-[2rem],
+  div.rounded-[2.5rem] {
+    background: #ffffff !important;
+    color: #000000 !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    border-color: #94a3b8 !important; 
+    border-width: 1px !important;
+    border-style: solid !important;
+    border-radius: 6px !important;
+    padding: 12px !important;
+    margin: 15px 0 !important;
+  }
+
+  /* Konversi warna teks ke warna gelap dengan tingkat kontras tinggi */
+  h1, h2, h3, h4, h5, h6, span, label, p, td, th, strong {
+    color: #000000 !important;
+    text-shadow: none !important;
+  }
+
+  /* Pemisahan warna khusus nominal agar tetap informatif dan terbaca di print-out hitam-putih */
+  .text-indigo-400, .text-indigo-300, .text-indigo-600, strong[class*="text-indigo-"] {
+    color: #2563eb !important; /* Biru pekat untuk Pagu */
+    font-weight: 800 !important;
+  }
+  .text-purple-400, .text-purple-300, .text-purple-600, strong[class*="text-purple-"] {
+    color: #4f46e5 !important; /* Indigo pekat untuk Realisasi */
+    font-weight: 800 !important;
+  }
+  .text-emerald-400, .text-emerald-300, .text-emerald-600, strong[class*="text-emerald-"] {
+    color: #059669 !important; /* Hijau pekat untuk Sisa Pagu surplus */
+    font-weight: 800 !important;
+  }
+  .text-rose-400, .text-rose-300, .text-rose-450, .text-rose-500, strong[class*="text-rose-"] {
+    color: #dc2626 !important; /* Merah pekat untuk defisit atau sisa melampaui pagu */
+    font-weight: 900 !important;
+    text-decoration: underline !important;
+  }
+  .text-amber-400, .text-amber-300, .text-amber-600, .text-amber-450 {
+    color: #b45309 !important; /* Oranye pekat */
+    font-weight: 800 !important;
+  }
+
+  /* Penataan Tabel Report (Matrix & Triwulan) */
+  table, .budget-table {
+    width: 100% !important;
+    min-width: 100% !important;
+    table-layout: auto !important;
+    border-collapse: collapse !important;
+    margin-top: 10px !important;
+    background-color: #ffffff !important;
+  }
+
+  th, td {
+    padding: 6px 8px !important;
+    border: 1px solid #475569 !important; /* Garis tepi solid berwarna abu sangat pekat */
+    background: #ffffff !important;
+    color: #000000 !important;
+    word-break: break-all !important;
+  }
+
+  th {
+    background: #e2e8f0 !important; /* Header abu terang */
+    color: #000000 !important;
+    font-weight: 800 !important;
+    text-transform: uppercase !important;
+    font-size: 10px !important;
+  }
+
+  /* Bersihkan input angka/rupiah bulanan agar terlihat sebagai teks murni tanpa garis kotak input */
+  input[type="text"], .month-input {
+    background: transparent !important;
+    border: none !important;
+    outline: none !important;
+    padding: 0 !important;
+    color: #000000 !important;
+    text-align: right !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    box-shadow: none !important;
+    width: 100% !important;
+  }
+
+  /* Pastikan container tabel melebar ke samping secara utuh dan tidak terpotong atau discroll */
+  .overflow-x-auto {
+    overflow: visible !important;
+    max-width: 100% !important;
+    display: block !important;
+  }
+
+  /* Cegah pemotongan tengah baris tabel antar halaman */
+  tr {
+    page-break-inside: avoid !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  /* Nonaktifkan posisi absolut/melekat (sticky/fixed) agar tidak tumpang tindih */
+  .sticky, .relative, .absolute {
+    position: static !important;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    background: transparent !important;
+    z-index: auto !important;
+    border-right-width: 1px !important;
+  }
+
+  /* Judul Anggaran */
+  .card.header-card, .header-card {
+    border-bottom: 2px solid #000000 !important;
+    border-radius: 0 !important;
+    margin-bottom: 25px !important;
+    padding-bottom: 15px !important;
   }
 }
 
@@ -192,3 +362,53 @@ html.light #sidebar .bg-slate-900 {
 .animate-gentle-shake {
   animation: gentle-shake 3.5s infinite ease-in-out;
 }
+
+/* Custom Budget Danger Blinking Keyframes & Classes */
+@keyframes danger-blink-anim {
+  0%, 100% {
+    color: #ef4444 !important; /* text-red-500 */
+    text-shadow: 0 0 2px rgba(239, 68, 68, 0.3);
+  }
+  50% {
+    color: #fca5a5 !important; /* text-red-300 */
+    text-shadow: 0 0 8px rgba(239, 68, 68, 0.7);
+  }
+}
+.animate-danger-blink {
+  animation: danger-blink-anim 1.2s infinite ease-in-out;
+}
+
+@keyframes danger-highlight-blink-light {
+  0%, 100% {
+    background-color: rgba(254, 226, 226, 0.35) !important; /* bg-red-50/35 */
+    border-color: rgba(239, 68, 68, 0.4) !important;
+    color: #dc2626 !important;
+  }
+  50% {
+    background-color: rgba(254, 226, 226, 0.9) !important; /* bg-red-100/90 */
+    border-color: rgba(239, 68, 68, 0.8) !important;
+    color: #991b1b !important;
+  }
+}
+
+@keyframes danger-highlight-blink-dark {
+  0%, 100% {
+    background-color: rgba(127, 29, 29, 0.15) !important; /* bg-red-950/15 */
+    border-color: rgba(239, 68, 68, 0.3) !important;
+    color: #f87171 !important;
+  }
+  50% {
+    background-color: rgba(127, 29, 29, 0.45) !important; /* bg-red-950/45 */
+    border-color: rgba(239, 68, 68, 0.7) !important;
+    color: #fca5a5 !important;
+  }
+}
+
+.animate-danger-card-blink {
+  animation: danger-highlight-blink-light 1.8s infinite ease-in-out;
+}
+
+.dark .animate-danger-card-blink {
+  animation: danger-highlight-blink-dark 1.8s infinite ease-in-out;
+}
+
