@@ -285,10 +285,26 @@ export default function App() {
       // 1. Completely strip out elements marked with the "no-print" helper class
       cleanElement.querySelectorAll('.no-print').forEach((el) => el.remove());
 
-      // 2. Programmatically purge all dynamic buttons, controls, select forms, file uploads, and active state switchers
-      cleanElement.querySelectorAll('button, select, input, textarea, form, iframe, progress, [role="tablist"]').forEach((el) => el.remove());
+      // 2. Transmute all inputs/selects/textareas to plain text spans preserving state values before purging form controls
+      cleanElement.querySelectorAll('input, select, textarea').forEach((el) => {
+        const inputEl = el as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+        let value = '';
+        if (inputEl.tagName.toLowerCase() === 'select') {
+          const select = inputEl as HTMLSelectElement;
+          value = select.options[select.selectedIndex]?.text || select.value || '';
+        } else {
+          value = inputEl.value || '';
+        }
+        const textSpan = document.createElement('span');
+        textSpan.className = 'printed-form-value font-mono font-bold';
+        textSpan.textContent = value;
+        inputEl.parentNode?.replaceChild(textSpan, inputEl);
+      });
 
-      // 3. Purge action trigger columns (e.g. headers and rows labeled "Aksi", "Action", "Detail", "Edit", "Opsi", etc.)
+      // 3. Programmatically purge all remaining dynamic buttons, controls, select forms, file uploads, and active state switchers
+      cleanElement.querySelectorAll('button, form, iframe, progress, [role="tablist"]').forEach((el) => el.remove());
+
+      // 4. Purge action trigger columns (e.g. headers and rows labeled "Aksi", "Action", "Detail", "Edit", "Opsi", etc.)
       cleanElement.querySelectorAll('th, td').forEach((cell) => {
         const c = cell as HTMLElement;
         const txt = c.textContent?.trim().toLowerCase() || '';
@@ -305,9 +321,10 @@ export default function App() {
         c.style.backgroundColor = 'transparent';
       });
 
-      // 4. Reset table responsive wrapper styles and eliminate fixed inline minimum widths
+      // 5. Reset table responsive wrapper styles, inject the "budget-table" class, and eliminate fixed inline minimum widths
       cleanElement.querySelectorAll('table').forEach((table) => {
         const t = table as HTMLElement;
+        t.classList.add('budget-table');
         t.style.minWidth = '100%';
         t.style.width = '100%';
         t.style.tableLayout = 'fixed';
@@ -316,10 +333,10 @@ export default function App() {
         t.removeAttribute('width');
       });
 
-      // 5. Remove any interactive file upload dropzones, status badges, or action toolbars
+      // 6. Remove any interactive file upload dropzones, status badges, or action toolbars
       cleanElement.querySelectorAll('[class*="border-dashed"], [class*="dropzone"], [class*="drag-and-drop"]').forEach((el) => el.remove());
 
-      // 6. Purge SVGs, social indicators, icons, charts, and canvas visualizations
+      // 7. Purge SVGs, social indicators, icons, charts, and canvas visualizations
       cleanElement.querySelectorAll('svg, canvas, iframe, audio, video').forEach((el) => el.remove());
 
       // 7. Strip out dark-themed background styles & color utility classes to allow pure white background ink conversion
@@ -597,6 +614,7 @@ export default function App() {
   const [apbdSubTab, setApbdSubTab] = useState<'monitoring' | 'rekap_kontribusi' | 'perjalanan_dinas' | 'makan_minum' | 'honorarium'>('monitoring');
   const [selectedApbdMonth, setSelectedApbdMonth] = useState<number>(0);
   const [apbdSearchQuery, setApbdSearchQuery] = useState<string>('');
+  const [apbdChartTab, setApbdChartTab] = useState<'triwulan' | 'monthly'>('triwulan');
 
   // Schema for each month row of target category
   interface RekapTableRow {
@@ -1070,7 +1088,8 @@ export default function App() {
         let sum = 0;
         if (apbdTabMode === 'integrated') {
           const monthsObj = calculatedApbdMonthlyValues[rowId] || {};
-          sum = Object.values(monthsObj).reduce((acc: number, current: any) => acc + (Number(current) || 0), 0) as number;
+          const manualObj = apbdInputs[rowId] || {};
+          sum = MONTHS_KEY.reduce((acc, m) => acc + (Number(monthsObj[m]) || 0) + (Number(manualObj[m]) || 0), 0);
         } else {
           const monthsObj = apbdInputs[rowId] || {};
           sum = Object.values(monthsObj).reduce((acc: number, current: any) => acc + (Number(current) || 0), 0) as number;
@@ -1108,7 +1127,7 @@ export default function App() {
       if (!row.isCat) {
         MONTHS_KEY.forEach((m, idx) => {
           const val = apbdTabMode === 'integrated'
-            ? (calculatedApbdMonthlyValues[row.id]?.[m] || 0)
+            ? (calculatedApbdMonthlyValues[row.id]?.[m] || 0) + (apbdInputs[row.id]?.[m] || 0)
             : (apbdInputs[row.id]?.[m] || 0);
           sums[idx] += val;
         });
@@ -4364,11 +4383,11 @@ export default function App() {
                     }
                   }}
                   className={`p-6 rounded-3xl border cursor-pointer select-none transition-all duration-300 relative group overflow-hidden active:scale-[1.02]
-                    ${dragOverApbd ? 'scale-[1.03] ring-4 ring-indigo-500/50 border-indigo-500 bg-indigo-950/25' : ''}
+                    ${dragOverApbd ? 'scale-[1.03] ring-4 ring-purple-500/50 border-purple-500 bg-purple-950/25' : ''}
                     ${activeAnggaranTab === 'apbd' 
                       ? (theme === 'light'
-                        ? 'bg-gradient-to-br from-indigo-50 to-white border-indigo-500 ring-2 ring-indigo-500/30 shadow-xl shadow-indigo-100'
-                        : 'bg-gradient-to-br from-indigo-950/40 to-slate-950 border-indigo-500/50 ring-2 ring-indigo-500/20 shadow-2xl shadow-indigo-950/20'
+                        ? 'bg-gradient-to-br from-purple-50 to-white border-purple-500 ring-2 ring-purple-500/30 shadow-xl shadow-purple-100'
+                        : 'bg-gradient-to-br from-purple-950/40 to-slate-950 border-purple-500/50 ring-2 ring-purple-500/20 shadow-2xl shadow-purple-950/20'
                       )
                       : (theme === 'light'
                         ? 'bg-slate-50 border-slate-200 hover:border-slate-300 hover:bg-slate-100/80 shadow-sm'
@@ -4379,13 +4398,13 @@ export default function App() {
                 >
                   {/* Decorative background glow for active folder */}
                   {activeAnggaranTab === 'apbd' && (
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none"></div>
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl pointer-events-none"></div>
                   )}
                   
                   <div className="flex items-start gap-4">
                     <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 transition-all duration-300
                       ${activeAnggaranTab === 'apbd' 
-                        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' 
+                        ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30' 
                         : (theme === 'light'
                           ? 'bg-slate-200 text-slate-500 group-hover:bg-slate-300 group-hover:text-slate-700'
                           : 'bg-slate-900 text-slate-500 group-hover:bg-slate-800 group-hover:text-slate-300'
@@ -4397,7 +4416,7 @@ export default function App() {
                     
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className={`text-[10px] font-black uppercase tracking-widest font-mono ${theme === 'light' ? 'text-indigo-600' : 'text-[#818cf8]'}`}>Folders / Sub Folder #2</span>
+                        <span className={`text-[10px] font-black uppercase tracking-widest font-mono ${theme === 'light' ? 'text-purple-600' : 'text-purple-400'}`}>Folders / Sub Folder #2</span>
                         {activeAnggaranTab === 'apbd' && (
                           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                         )}
@@ -4408,9 +4427,9 @@ export default function App() {
                       </p>
                       
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-4 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-550">
-                        <span>Pagu: <strong className={`${theme === 'light' ? 'text-indigo-600' : 'text-indigo-400'} font-black font-sans`}>Rp {formatIDR(PaguTotalAPBD)}</strong></span>
+                        <span>Pagu: <strong className={`${theme === 'light' ? 'text-purple-600' : 'text-purple-400'} font-black font-sans`}>Rp {formatIDR(PaguTotalAPBD)}</strong></span>
                         <span>•</span>
-                        <span>Terpakai: <strong className={`${theme === 'light' ? 'text-purple-600' : 'text-purple-400'} font-sans`}>Rp {formatIDR(totalAPBDRealisasi)}</strong></span>
+                        <span>Terpakai: <strong className={`${theme === 'light' ? 'text-purple-650' : 'text-purple-405'} font-sans`}>Rp {formatIDR(totalAPBDRealisasi)}</strong></span>
                       </div>
                     </div>
                   </div>
@@ -4432,7 +4451,7 @@ export default function App() {
                     <div className={`p-6 rounded-3xl border shadow-xl transition-all duration-300
                       ${theme === 'light' ? 'bg-white border-slate-200/95 shadow-slate-100' : 'bg-slate-950 border-slate-800'}
                     `}>
-                      <span className={`text-xs font-bold block mb-1 ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>Terpakai (Realisasi PAD)</span>
+                      <span className={`text-xs font-bold block mb-1 ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>Realisasi / Realisasi SPJ</span>
                       <h4 className={`text-2xl font-black ${theme === 'light' ? 'text-purple-600' : 'text-purple-400'}`}>Rp {formatIDR(totalAPBDRealisasi)}</h4>
                     </div>
                      <div className={`p-6 rounded-3xl border shadow-xl font-sans transition-all duration-300
@@ -4511,6 +4530,34 @@ export default function App() {
                       </span>
                     </div>
                   </div>
+
+                  {/* APBD SECTION TABS CONTROL */}
+                  {apbdTabMode === 'integrated' && (
+                    <div className="relative z-10 flex flex-wrap border-b border-slate-800 gap-1 no-print">
+                      <button
+                        onClick={() => setApbdSubTab('monitoring')}
+                        className={`px-5 py-3 text-xs font-black transition-all border-b-2 cursor-pointer uppercase tracking-wider
+                          ${apbdSubTab === 'monitoring' 
+                            ? 'border-purple-500 text-purple-400 font-extrabold' 
+                            : 'border-transparent text-slate-400 hover:text-white'
+                          }
+                        `}
+                      >
+                        📈 1. Monitoring Anggaran
+                      </button>
+                      <button
+                        onClick={() => setApbdSubTab('input')}
+                        className={`px-5 py-3 text-xs font-black transition-all border-b-2 cursor-pointer uppercase tracking-wider
+                          ${apbdSubTab === 'input' 
+                            ? 'border-purple-500 text-purple-400 font-extrabold' 
+                            : 'border-transparent text-slate-400 hover:text-white'
+                          }
+                        `}
+                      >
+                        ✍️ 2. Input Bulanan
+                      </button>
+                    </div>
+                  )}
 
                   {/* SUB-TAB 1: REKAP DAN MONITORING APBD */}
                   {apbdSubTab === 'monitoring' && (
@@ -4603,81 +4650,264 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* NEW SECTION: MONITORING ALOKASI PER TRIWULAN (Symmetrical to BLUD!) */}
-                      <div id="apbd-triwulan" className="bg-slate-950 border border-slate-800 p-6 md:p-8 rounded-[2rem] shadow-2xl">
-                        <div className="flex justify-between items-center mb-6">
-                          <h4 className="font-extrabold text-white text-base uppercase tracking-wider flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-indigo-500 ml-1"></span>
-                            <span>Monitoring Alokasi Anggaran APBD Per Triwulan 2026</span>
-                          </h4>
-                          <button
-                            onClick={() => initiatePrint('Monitoring Alokasi Anggaran APBD Per Triwulan 2026', 'apbd-triwulan')}
-                            className="px-3.5 py-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-xs font-black text-slate-200 hover:text-white rounded-xl transition-all cursor-pointer flex items-center gap-1.5 no-print"
-                          >
-                            <Printer className="w-3.5 h-3.5 text-indigo-400" />
-                            <span>Cetak Lembar Monitoring</span>
-                          </button>
-                        </div>
+                      {/* NEW SECTION: MONITORING ALOKASI PER TRIWULAN IN SPLIT DUAL COLS (Symmetrical to BLUD!) */}
+                      {(() => {
+                        const apbdChartTriwulanData = ['Triwulan I', 'Triwulan II', 'Triwulan III', 'Triwulan IV'].map((name, idx) => {
+                          const alok = 523493692;
+                          const real = idx === 0 ? (calculatedApbdMonthlySums[0] + calculatedApbdMonthlySums[1] + calculatedApbdMonthlySums[2]) :
+                                       idx === 1 ? (calculatedApbdMonthlySums[3] + calculatedApbdMonthlySums[4] + calculatedApbdMonthlySums[5]) :
+                                       idx === 2 ? (calculatedApbdMonthlySums[6] + calculatedApbdMonthlySums[7] + calculatedApbdMonthlySums[8]) :
+                                                   (calculatedApbdMonthlySums[9] + calculatedApbdMonthlySums[10] + calculatedApbdMonthlySums[11]);
+                          return {
+                            name,
+                            "Target Pagu / Alokasi": alok,
+                            "Realisasi PAD": real,
+                            "Sisa Alokasi": Math.max(0, alok - real),
+                            "Persentase": alok ? Math.round((real / alok) * 100) : 0
+                          };
+                        });
 
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left">
-                            <thead>
-                              <tr className="border-b border-slate-800 text-[10px] text-slate-400 uppercase tracking-widest font-black">
-                                <th className="py-4 px-6 w-16">No</th>
-                                <th className="py-4 px-6">Triwulan Kegiatan</th>
-                                <th className="py-4 px-6 text-right">Target Pagu / Alokasi</th>
-                                <th className="py-4 px-6 text-right">Realisasi PAD Terkumpul</th>
-                                <th className="py-4 px-6 text-right">Sisa Alokasi Terbuka</th>
-                                <th className="py-4 px-6 text-right w-36">Persentase Capaian</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-900 font-sans text-xs">
-                              {[523493692, 523493692, 523493692, 523493692].map((alok, idx) => {
-                                const real = idx === 0 ? (calculatedApbdMonthlySums[0] + calculatedApbdMonthlySums[1] + calculatedApbdMonthlySums[2]) :
-                                             idx === 1 ? (calculatedApbdMonthlySums[3] + calculatedApbdMonthlySums[4] + calculatedApbdMonthlySums[5]) :
-                                             idx === 2 ? (calculatedApbdMonthlySums[6] + calculatedApbdMonthlySums[7] + calculatedApbdMonthlySums[8]) :
-                                                         (calculatedApbdMonthlySums[9] + calculatedApbdMonthlySums[10] + calculatedApbdMonthlySums[11]);
-                                const sisa = alok - real;
-                                const percent = alok ? Math.round((real / alok) * 100) : 0;
-                                return (
-                                  <tr key={idx} className="hover:bg-slate-900/30 transition-colors text-slate-300">
-                                    <td className="py-4 px-6 font-bold text-slate-400">{idx + 1}</td>
-                                    <td className="py-4 px-6 font-bold text-slate-100">
-                                      Triwulan {idx === 0 ? 'I (Jan - Mar)' : idx === 1 ? 'II (Apr - Jun)' : idx === 2 ? 'III (Jul - Sep)' : 'IV (Okt - Des)'}
-                                    </td>
-                                    <td className="py-4 px-6 text-right font-mono font-bold text-indigo-400">Rp {formatIDR(alok)}</td>
-                                    <td className="py-4 px-6 text-right font-mono font-bold text-purple-400">Rp {formatIDR(real)}</td>
-                                    <td className={`py-4 px-6 text-right font-mono font-bold ${
-                                      alok > 0 && sisa < (0.1 * alok)
-                                        ? 'animate-danger-blink bg-red-500/5'
-                                        : sisa < 0 ? 'text-rose-450' : 'text-emerald-400'
-                                    }`}>Rp {formatIDR(sisa)}</td>
-                                    <td className="py-4 px-6 text-right">
-                                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-black inline-block ${percent > 100 ? 'bg-rose-500/10 text-rose-450 border border-rose-500/10' : percent > 45 ? 'bg-amber-500/10 text-amber-450 border border-amber-500/10' : 'bg-emerald-500/10 text-emerald-450 border border-emerald-500/10'}`}>
-                                        {percent}%
-                                      </span>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                              {/* Total Triwulan row */}
-                              <tr className="bg-slate-900/40 font-bold text-white border-t-2 border-slate-800">
-                                <td colSpan={2} className="py-5 px-6 uppercase tracking-wider text-right font-black">Jumlah Total:</td>
-                                <td className="py-5 px-6 text-right font-mono font-black text-indigo-300 text-sm">Rp {formatIDR(PaguTotalAPBD)}</td>
-                                <td className="py-5 px-6 text-right font-mono font-black text-purple-300 text-sm">Rp {formatIDR(totalAPBDRealisasi)}</td>
-                                <td className={`py-5 px-6 text-right font-mono font-black text-sm ${(PaguTotalAPBD - totalAPBDRealisasi) < 0 ? 'text-rose-350' : 'text-emerald-350'}`}>
-                                  Rp {formatIDR(PaguTotalAPBD - totalAPBDRealisasi)}
-                                </td>
-                                <td className="py-5 px-6 text-right">
-                                  <span className="px-3 py-1 bg-indigo-900/40 text-indigo-300 rounded-lg border border-indigo-500/20 font-black font-sans text-xs">
-                                    {PaguTotalAPBD ? Math.round((totalAPBDRealisasi / PaguTotalAPBD) * 100) : 0}%
-                                  </span>
-                                </td>
-                              </tr>
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
+                        const apbdChartMonthlyData = (() => {
+                          const monthsAbbr = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+                          let runningCumulative = 0;
+                          return monthsAbbr.map((mName, mIdx) => {
+                            const monthlyTotal = calculatedApbdMonthlySums[mIdx] || 0;
+                            runningCumulative += monthlyTotal;
+                            return {
+                              name: mName,
+                              "Realisasi Bulanan": monthlyTotal,
+                              "Kumulatif PAD": runningCumulative,
+                            };
+                          });
+                        })();
+
+                        const CustomTooltip = ({ active, payload, label }: any) => {
+                          if (active && payload && payload.length) {
+                            return (
+                              <div className={`p-3.5 rounded-2xl border shadow-xl backdrop-blur-md ${
+                                theme === 'light' 
+                                  ? 'bg-white/95 border-purple-150 text-slate-900 shadow-slate-100 shadow-sm' 
+                                  : 'bg-slate-950/95 border-purple-500/30 text-white shadow-[#a855f7]/10'
+                              }`}>
+                                <p className="font-sans font-black text-xs uppercase tracking-wide mb-1.5">{label}</p>
+                                <div className="space-y-1">
+                                  {payload.map((entry: any, i: number) => {
+                                    return (
+                                      <div key={i} className="flex items-center gap-2 text-xs">
+                                        <div className="w-2.5 h-2.5 rounded" style={{ backgroundColor: entry.color }} />
+                                        <span className="font-semibold text-slate-400">{entry.name}:</span>
+                                        <span className={`font-mono font-bold ${theme === 'light' ? 'text-slate-800' : 'text-slate-205'}`}>
+                                          {typeof entry.value === 'number' && entry.name.includes('Persentase') 
+                                            ? `${entry.value}%` 
+                                            : `Rp ${formatIDR(entry.value)}`
+                                          }
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          }
+                          return null;
+                        };
+
+                        return (
+                          <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
+                            
+                            {/* LEFT SIDE: MONITORING TABLE (60% width on xl: screens) */}
+                            <div id="apbd-triwulan" className={`p-6 md:p-8 rounded-[2rem] border transition-all xl:col-span-7 ${
+                              theme === 'light'
+                                ? 'bg-white border-slate-200/85'
+                                : 'bg-slate-950 border-slate-800 shadow-2xl'
+                            }`}>
+                              <div className="flex justify-between items-center mb-6">
+                                <h4 className={`font-extrabold text-base uppercase tracking-wider flex items-center gap-2 ${
+                                  theme === 'light' ? 'text-slate-900' : 'text-white'
+                                }`}>
+                                  <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                                  <span>Monitoring Alokasi Anggaran APBD Per Triwulan 2026</span>
+                                </h4>
+                                <button
+                                  onClick={() => initiatePrint('Monitoring Alokasi Anggaran APBD Per Triwulan 2026', 'apbd-triwulan')}
+                                  className={`px-3.5 py-2 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center gap-1.5 no-print border ${
+                                    theme === 'light'
+                                      ? 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700 hover:text-slate-900 shadow-sm'
+                                      : 'bg-slate-900 hover:bg-slate-850 border-slate-800 text-slate-200 hover:text-white'
+                                  }`}
+                                >
+                                  <Printer className="w-3.5 h-3.5 text-purple-400" />
+                                  <span>Cetak Lembar Monitoring</span>
+                                </button>
+                              </div>
+
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-left">
+                                  <thead>
+                                    <tr className={`border-b text-[10px] uppercase tracking-widest font-black ${
+                                      theme === 'light' ? 'border-slate-100 text-slate-500' : 'border-slate-800 text-slate-400'
+                                    }`}>
+                                      <th className="py-4 px-6 w-16">No</th>
+                                      <th className="py-4 px-6">Triwulan Kegiatan</th>
+                                      <th className="py-4 px-6 text-right">Target Pagu / Alokasi</th>
+                                      <th className="py-4 px-6 text-right">Realisasi PAD Terkumpul</th>
+                                      <th className="py-4 px-6 text-right">Sisa Alokasi Terbuka</th>
+                                      <th className="py-4 px-6 text-right w-36">Persentase Capaian</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className={`divide-y font-sans text-xs ${
+                                    theme === 'light' ? 'divide-slate-100' : 'divide-slate-900'
+                                  }`}>
+                                    {apbdChartTriwulanData.map((alokData, idx) => {
+                                      const alok = alokData["Target Pagu / Alokasi"];
+                                      const real = alokData["Realisasi PAD"];
+                                      const sisa = alokData["Sisa Alokasi"];
+                                      const percent = alokData["Persentase"];
+                                      return (
+                                        <tr key={idx} className={`transition-colors ${
+                                          theme === 'light' 
+                                            ? 'hover:bg-slate-50/50 text-slate-700' 
+                                            : 'hover:bg-slate-900/30 text-slate-300'
+                                        }`}>
+                                          <td className="py-4 px-6 font-bold text-slate-450">{idx + 1}</td>
+                                          <td className={`py-4 px-6 font-bold ${theme === 'light' ? 'text-slate-900' : 'text-slate-100'}`}>
+                                            Triwulan {idx === 0 ? 'I (Jan - Mar)' : idx === 1 ? 'II (Apr - Jun)' : idx === 2 ? 'III (Jul - Sep)' : 'IV (Okt - Des)'}
+                                          </td>
+                                          <td className={`py-4 px-6 text-right font-mono font-bold ${theme === 'light' ? 'text-purple-650' : 'text-purple-400'}`}>Rp {formatIDR(alok)}</td>
+                                          <td className={`py-4 px-6 text-right font-mono font-bold ${theme === 'light' ? 'text-indigo-650' : 'text-indigo-400'}`}>Rp {formatIDR(real)}</td>
+                                          <td className={`py-4 px-6 text-right font-mono font-bold ${
+                                            alok > 0 && sisa < (0.1 * alok)
+                                              ? 'animate-danger-blink bg-red-500/5'
+                                              : theme === 'light' ? 'text-emerald-700' : 'text-emerald-400'
+                                          }`}>Rp {formatIDR(sisa)}</td>
+                                          <td className="py-4 px-6 text-right">
+                                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-black inline-block ${
+                                              percent > 85 
+                                                ? (theme === 'light' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-indigo-500/10 text-indigo-455 border border-indigo-500/10') 
+                                                : percent > 45 
+                                                  ? (theme === 'light' ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-amber-500/10 text-amber-450 border border-amber-500/10') 
+                                                  : (theme === 'light' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-emerald-500/10 text-emerald-450 border border-emerald-500/10')
+                                            }`}>
+                                              {percent}%
+                                            </span>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                    {/* Total Triwulan row */}
+                                    <tr className={`font-bold border-t-2 ${
+                                      theme === 'light' 
+                                        ? 'bg-slate-50/80 text-slate-900 border-slate-200' 
+                                        : 'bg-slate-900/40 text-white border-slate-800'
+                                    }`}>
+                                      <td colSpan={2} className="py-5 px-6 uppercase tracking-wider text-right font-black">Jumlah Total:</td>
+                                      <td className={`py-5 px-6 text-right font-mono font-black text-sm ${theme === 'light' ? 'text-purple-700' : 'text-purple-300'}`}>Rp {formatIDR(PaguTotalAPBD)}</td>
+                                      <td className={`py-5 px-6 text-right font-mono font-black text-sm ${theme === 'light' ? 'text-indigo-700' : 'text-indigo-300'}`}>Rp {formatIDR(totalAPBDRealisasi)}</td>
+                                      <td className={`py-5 px-6 text-right font-mono font-black text-sm ${theme === 'light' ? 'text-emerald-750' : 'text-emerald-300'}`}>Rp {formatIDR(PaguTotalAPBD - totalAPBDRealisasi)}</td>
+                                      <td className="py-5 px-6 text-right">
+                                        <span className={`px-3 py-1 rounded-lg font-black font-sans text-xs border ${
+                                          theme === 'light' 
+                                            ? 'bg-purple-100/55 text-purple-700 border-purple-200' 
+                                            : 'bg-purple-900/40 text-purple-300 border-purple-500/20'
+                                        }`}>
+                                          {PaguTotalAPBD ? Math.round((totalAPBDRealisasi / PaguTotalAPBD) * 100) : 0}%
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+
+                            {/* RIGHT SIDE: CUSTOM CHART CARD (40% width on xl: screens) */}
+                            <div className={`p-6 md:p-8 rounded-[2rem] border transition-all flex flex-col justify-between xl:col-span-5 ${
+                              theme === 'light'
+                                ? 'bg-white border-slate-200/85 shadow-lg shadow-slate-100'
+                                : 'bg-slate-950 border-slate-800 shadow-2xl shadow-indigo-950/20'
+                            }`}>
+                              <div className="w-full">
+                                <div className="flex justify-between items-center mb-6">
+                                  <div>
+                                    <h4 className={`font-extrabold text-base uppercase tracking-wider flex items-center gap-2 ${
+                                      theme === 'light' ? 'text-slate-900' : 'text-white'
+                                    }`}>
+                                      <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                                      <span>Dashboard Visualisasi Penyerapan Anggaran</span>
+                                    </h4>
+                                    <p className="text-[10px] text-slate-500 mt-1 font-bold">Analisis interaktif persentase realisasi anggaran APBD</p>
+                                  </div>
+                                </div>
+
+                                {/* Custom Chart Tab Switches */}
+                                <div className="flex flex-wrap gap-2 mb-6">
+                                  {[
+                                    { id: 'triwulan', label: 'Triwulan', icon: LayoutDashboard },
+                                    { id: 'monthly', label: 'Tren Bulanan', icon: Calendar }
+                                  ].map(tab => {
+                                    const Icon = tab.icon;
+                                    const isActive = apbdChartTab === tab.id;
+                                    return (
+                                      <button
+                                        key={tab.id}
+                                        onClick={() => setApbdChartTab(tab.id as any)}
+                                        className={`px-3 py-1.5 rounded-xl text-[11px] font-black cursor-pointer flex items-center gap-1.5 transition-all
+                                          ${isActive 
+                                            ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20' 
+                                            : (theme === 'light'
+                                              ? 'text-slate-650 hover:text-slate-900 hover:bg-slate-150 bg-slate-50 border border-slate-200'
+                                              : 'text-slate-400 hover:text-white hover:bg-slate-900 bg-slate-950 border border-slate-800'
+                                            )
+                                          }
+                                        `}
+                                      >
+                                        <Icon className="w-3.5 h-3.5" />
+                                        <span>{tab.label}</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+
+                                {/* Chart Container */}
+                                <div className="h-64 w-full flex items-center justify-center">
+                                  <ResponsiveContainer width="100%" height="100%">
+                                    {(() => {
+                                      if (apbdChartTab === 'triwulan') {
+                                        return (
+                                          <BarChart data={apbdChartTriwulanData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'light' ? '#f1f5f9' : '#1e293b'} />
+                                            <XAxis dataKey="name" stroke={theme === 'light' ? '#64748b' : '#94a3b8'} fontFamily="Inter" fontSize={10} fontWeight={600} />
+                                            <YAxis stroke={theme === 'light' ? '#64748b' : '#94a3b8'} fontFamily="Inter" fontSize={9} fontWeight={600} tickFormatter={(val) => `Rp ${(val / 1000000).toFixed(0)}Jt`} />
+                                            <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(168, 85, 247, 0.05)' }} />
+                                            <Bar dataKey="Target Pagu / Alokasi" fill="#c084fc" radius={[4, 4, 0, 0]} />
+                                            <Bar dataKey="Realisasi PAD" fill="#a855f7" radius={[4, 4, 0, 0]} />
+                                          </BarChart>
+                                        );
+                                      } else {
+                                        return (
+                                          <AreaChart data={apbdChartMonthlyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                            <defs>
+                                              <linearGradient id="apbdAreaGradient" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="#a855f7" stopOpacity={0.4}/>
+                                                <stop offset="95%" stopColor="#a855f7" stopOpacity={0.0}/>
+                                              </linearGradient>
+                                            </defs>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'light' ? '#f1f5f9' : '#1e293b'} />
+                                            <XAxis dataKey="name" stroke={theme === 'light' ? '#64748b' : '#94a3b8'} fontFamily="Inter" fontSize={10} fontWeight={600} />
+                                            <YAxis stroke={theme === 'light' ? '#64748b' : '#94a3b8'} fontFamily="Inter" fontSize={9} fontWeight={600} tickFormatter={(val) => `Rp ${(val / 1000000).toFixed(0)}Jt`} />
+                                            <Tooltip content={<CustomTooltip />} />
+                                            <Area type="monotone" dataKey="Realisasi Bulanan" stroke="#a855f7" strokeWidth={3} fillOpacity={1} fill="url(#apbdAreaGradient)" />
+                                          </AreaChart>
+                                        );
+                                      }
+                                    })()}
+                                  </ResponsiveContainer>
+                                </div>
+                              </div>
+                            </div>
+
+                          </div>
+                        );
+                      })()}
 
                       {/* SPREADSHEET TABLE GRID CONTAINER (Sleek horizontal matrix layout) */}
                       <div className={`p-6 md:p-8 rounded-[2.5rem] border transition-all relative ${
@@ -4700,27 +4930,29 @@ export default function App() {
                         <div className={`overflow-x-auto max-w-full rounded-2xl border ${
                           theme === 'light' ? 'border-slate-200' : 'border-slate-900'
                         }`}>
-                          <table className="budget-table text-xs text-left w-full" style={{ minWidth: '1800px', borderCollapse: 'separate', borderSpacing: 0 }}>
+                          <table className="budget-table text-xs text-left w-full" style={{ minWidth: '1850px', borderCollapse: 'separate', borderSpacing: 0 }}>
                             <thead>
                               <tr className={`uppercase tracking-wider border-b text-[10px] font-black ${
                                 theme === 'light' 
                                   ? 'bg-slate-50 text-slate-500 border-slate-200' 
                                   : 'bg-slate-900 text-slate-400 border-slate-850'
                               }`}>
-                                <th className={`p-4 w-[110px] text-center sticky left-0 z-20 border-r ${
+                                <th className={`p-4 w-[110px] text-center align-middle sticky left-0 z-20 border-r ${
                                   theme === 'light' ? 'bg-slate-50 text-slate-600 border-slate-200' : 'bg-slate-900 text-slate-400 border-slate-800'
                                 }`}>Kode Rek.</th>
-                                <th className={`p-4 w-[320px] sticky left-[110px] z-20 border-r ${
+                                <th className={`p-4 w-[180px] align-middle sticky left-[110px] z-20 border-r ${
                                   theme === 'light' ? 'bg-slate-50 text-slate-600 border-slate-200' : 'bg-slate-900 text-slate-400 border-slate-800'
                                 }`}>Uraian Belanja</th>
-                                <th className="p-4 w-[150px] text-right">Pagu Anggaran</th>
+                                <th className="p-4 w-[130px] align-middle text-right">Pagu Anggaran</th>
                                 {MONTHS_LABEL_ID.map(m => (
-                                  <th key={m.key} className="p-4 text-center font-bold tracking-widest">{m.label.toUpperCase()}</th>
+                                  <th key={m.key} className="p-4 font-bold tracking-widest w-[100px] min-w-[100px] align-middle text-center">
+                                    <span className="block text-center w-full">{m.label.toUpperCase()}</span>
+                                  </th>
                                 ))}
-                                <th className={`p-4 w-[160px] text-right ${
+                                <th className={`p-4 w-[130px] align-middle text-right ${
                                   theme === 'light' ? 'bg-indigo-50/70 text-indigo-700' : 'bg-indigo-950/20 text-indigo-300'
                                 }`}>Total Realisasi</th>
-                                <th className={`p-4 w-[160px] text-right ${
+                                <th className={`p-4 w-[130px] align-middle text-right ${
                                   theme === 'light' ? 'bg-emerald-50/70 text-emerald-700' : 'bg-emerald-950/20 text-emerald-300'
                                 }`}>Sisa Pagu</th>
                               </tr>
@@ -4742,11 +4974,11 @@ export default function App() {
                                       ${isCategoryNode 
                                         ? (theme === 'light' ? 'bg-slate-50/60 font-semibold text-slate-800' : 'bg-slate-900/50 font-bold text-white') 
                                         : (theme === 'light' ? 'hover:bg-slate-50/50 text-slate-700' : 'hover:bg-slate-900/30 text-slate-300')}
-                                      transition-all duration-100
+                                      transition-all duration-100 align-middle
                                     `}
                                   >
                                     {/* Code Column (Sticky 1) */}
-                                    <td className={`p-3 font-mono text-center sticky left-0 z-10 border-r font-semibold ${
+                                    <td className={`p-3 font-mono text-center align-middle sticky left-0 z-10 border-r font-semibold ${
                                       theme === 'light'
                                         ? 'bg-white text-slate-600 border-slate-200'
                                         : 'bg-slate-950 text-slate-400 border-slate-900'
@@ -4755,7 +4987,7 @@ export default function App() {
                                     </td>
 
                                     {/* Name Column (Sticky 2) */}
-                                    <td className={`p-3 sticky left-[110px] z-10 border-r font-bold truncate max-w-[320px] ${plClass} ${
+                                    <td className={`p-3 sticky left-[110px] z-10 align-middle border-r font-bold whitespace-normal break-words max-w-[180px] ${plClass} ${
                                       theme === 'light'
                                         ? 'bg-white text-slate-800 border-slate-200'
                                         : 'bg-slate-950 text-slate-100 border-slate-900'
@@ -4764,7 +4996,7 @@ export default function App() {
                                     </td>
 
                                     {/* Pagu Budget Column */}
-                                    <td className={`p-3 text-right font-bold whitespace-nowrap ${
+                                    <td className={`p-3 text-right align-middle font-bold whitespace-nowrap ${
                                       theme === 'light' ? 'text-slate-700' : 'text-slate-300'
                                     }`}>
                                       {row.budget ? `Rp ${formatIDR(row.budget)}` : ''}
@@ -4772,7 +5004,7 @@ export default function App() {
 
                                     {/* 12 Months Column or Colspan 12 */}
                                     {isCategoryNode ? (
-                                      <td colSpan={12} className={`p-3 text-center font-bold tracking-widest text-[9px] uppercase ${
+                                      <td colSpan={12} className={`p-3 text-center align-middle font-bold tracking-widest text-[9px] uppercase ${
                                         theme === 'light' ? 'bg-slate-50/40 text-slate-400' : 'bg-slate-900/20 text-slate-500'
                                       }`}>
                                         Sub-kalkulasi Otomatis
@@ -4780,18 +5012,20 @@ export default function App() {
                                     ) : (
                                       MONTHS_KEY.map(m => {
                                         const currVal = apbdInputs[row.id]?.[m];
+                                        const integratedVal = apbdTabMode === 'integrated' ? (calculatedApbdMonthlyValues[row.id]?.[m] || 0) : 0;
                                         return (
-                                          <td key={m} className={`p-1 px-1.5 border-r ${
+                                          <td key={m} className={`p-1 px-1.5 align-middle border-r ${
                                             theme === 'light' ? 'border-slate-100' : 'border-slate-900'
                                           }`}>
                                             <input 
                                               type="text" 
-                                              className={`month-input w-full p-1.5 text-right font-mono border rounded-lg text-xs font-black transition-all ${
+                                              className={`month-input w-full py-1 text-right font-mono border rounded-lg text-xs font-black transition-all ${
                                                 theme === 'light'
                                                   ? 'bg-white border-slate-200 hover:border-slate-300 focus:border-indigo-500 text-slate-800 placeholder-slate-300'
                                                   : 'bg-slate-900/40 border-slate-900 hover:border-slate-800 focus:border-indigo-500 focus:bg-slate-900/95 text-slate-200 placeholder-slate-800'
                                               }`}
-                                              placeholder="0"
+                                              style={{ paddingLeft: '4px', paddingRight: '4px' }}
+                                              placeholder={integratedVal ? formatIDR(integratedVal) : "0"}
                                               value={currVal ? formatIDR(currVal) : ''}
                                               onChange={(e) => handleAPBDInput(row.id, m, e.target.value)}
                                             />
@@ -4801,14 +5035,14 @@ export default function App() {
                                     )}
 
                                     {/* Total Realisasi Column */}
-                                    <td className={`p-3 text-right font-black whitespace-nowrap ${
+                                    <td className={`p-3 text-right align-middle font-black whitespace-nowrap ${
                                       theme === 'light' ? 'bg-indigo-50/30 text-indigo-600' : 'bg-indigo-950/15 text-indigo-400'
                                     }`}>
                                       Rp {formatIDR(totalRealisasi)}
                                     </td>
 
                                     {/* Sisa Pagu Column */}
-                                    <td className={`p-3 text-right font-black whitespace-nowrap ${
+                                    <td className={`p-3 text-right align-middle font-black whitespace-nowrap ${
                                       row.budget > 0 && sisaPaguValue < (0.1 * row.budget)
                                         ? 'animate-danger-blink bg-red-500/5'
                                         : theme === 'light'
@@ -5204,10 +5438,19 @@ export default function App() {
                           ) : (
                             <div className="space-y-4">
                               {filteredLeafRows.map((row) => {
-                                const currVal = apbdInputs[row.id]?.[activeMonthKey] || 0;
-                                const totalOtherMonths = MONTHS_KEY.reduce((acc, m) => m === activeMonthKey ? acc : acc + (apbdInputs[row.id]?.[m] || 0), 0);
+                                const isIntegrated = apbdTabMode === 'integrated';
+                                const manualCurrVal = apbdInputs[row.id]?.[activeMonthKey] || 0;
+                                const integratedCurrVal = isIntegrated ? (calculatedApbdMonthlyValues[row.id]?.[activeMonthKey] || 0) : 0;
+                                const currVal = manualCurrVal;
+
+                                const manualOtherMonths = MONTHS_KEY.reduce((acc, m) => m === activeMonthKey ? acc : acc + (apbdInputs[row.id]?.[m] || 0), 0);
+                                const integratedOtherMonths = isIntegrated
+                                  ? MONTHS_KEY.reduce((acc, m) => m === activeMonthKey ? acc : acc + (calculatedApbdMonthlyValues[row.id]?.[m] || 0), 0)
+                                  : 0;
+
+                                const totalOtherMonths = manualOtherMonths + integratedOtherMonths;
                                 const totalBudget = row.budget || 0;
-                                const currentTotalSpend = totalOtherMonths + currVal;
+                                const currentTotalSpend = totalOtherMonths + currVal + integratedCurrVal;
                                 const itemBalance = totalBudget - currentTotalSpend;
 
                                 return (
@@ -5250,7 +5493,7 @@ export default function App() {
                                         <input 
                                           type="text" 
                                           className="w-full bg-slate-900 border border-slate-800 hover:border-slate-700 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-right font-mono text-sm font-black text-slate-100 placeholder-slate-800 focus:outline-none"
-                                          placeholder="0"
+                                          placeholder={integratedCurrVal ? formatIDR(integratedCurrVal) : "0"}
                                           value={currVal ? formatIDR(currVal) : ''}
                                           onChange={(e) => handleAPBDInput(row.id, activeMonthKey, e.target.value)}
                                         />
