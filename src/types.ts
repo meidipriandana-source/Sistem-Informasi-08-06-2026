@@ -75,4 +75,12 @@ export interface FullBackupPayload {
   apbdInputs: APBDMonthlyInputValues;
   googleConfig: GoogleConfig;
   activities: RecentActivity[];
+  rekapKontribusi?: Record<number, any[]>;
+  rekapPerjalanan?: Record<number, any[]>;
+  rekapMakanMinum?: Record<number, any[]>;
+  rekapHonorarium?: Record<number, any[]>;
+  apbdRekapKontribusi?: Record<number, any[]>;
+  apbdRekapPerjalanan?: Record<number, any[]>;
+  apbdRekapMakanMinum?: Record<number, any[]>;
+  apbdRekapHonorarium?: Record<number, any[]>;
 }

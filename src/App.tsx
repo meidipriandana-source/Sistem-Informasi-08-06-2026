@@ -49,7 +49,10 @@ import {
   Loader2,
   Cpu,
   MoreVertical,
-  Copy
+  Copy,
+  Bot,
+  Sparkles,
+  Brain
 } from 'lucide-react';
 
 import { 
@@ -113,7 +116,7 @@ interface FlatBudgetRow {
 export default function App() {
   // Navigation
   const [activeSection, setActiveSection] = useState<string>('dashboard');
-  const [activeAnggaranTab, setActiveAnggaranTab] = useState<'apbd' | 'blud'>('blud');
+  const [activeAnggaranTab, setActiveAnggaranTab] = useState<'apbd' | 'blud' | 'ai_summary'>('blud');
   const [dragOverBlud, setDragOverBlud] = useState(false);
   const [dragOverApbd, setDragOverApbd] = useState(false);
   const [showBludTooltip, setShowBludTooltip] = useState(false);
@@ -921,6 +924,7 @@ export default function App() {
   const fileInputSertifikatRef = useRef<HTMLInputElement>(null);
   const fileInputPerjadinRef = useRef<HTMLInputElement>(null);
   const fileInputRestoreRef = useRef<HTMLInputElement>(null);
+  const settingsFileInputRestoreRef = useRef<HTMLInputElement>(null);
   const fileInputPdfRef = useRef<HTMLInputElement>(null);
   const fileInputBludUploadRef = useRef<HTMLInputElement>(null);
   const fileInputBludRestoreRef = useRef<HTMLInputElement>(null);
@@ -933,6 +937,324 @@ export default function App() {
 
   // Success indicator status
   const [saveStatus, setSaveStatus] = useState<string>('Siap');
+
+  // AI-Powered Executive Summary Report states
+  const [aiSummaryMonth, setAiSummaryMonth] = useState<string>('all');
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+  const [aiSummaries, setAiSummaries] = useState<Record<string, string>>(() => {
+    try {
+      const stored = localStorage.getItem('app_ai_summaries');
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
+  const [aiSummaryError, setAiSummaryError] = useState<string | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem('app_ai_summaries', JSON.stringify(aiSummaries));
+  }, [aiSummaries]);
+
+  // Main Handler to request AI summary formulation from Backend Node server
+  const handleGenerateAiSummary = async () => {
+    setIsGeneratingSummary(true);
+    setAiSummaryError(null);
+    
+    const indonesianMonths = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    
+    // Map APBD values
+    const preparedApbdData = flatBudgetRows
+      .filter(row => !row.isCat)
+      .map(row => {
+        // Realization of selected month
+        const realisasiBulanIni = aiSummaryMonth === 'all'
+          ? 0
+          : (apbdTabMode === 'integrated'
+              ? (calculatedApbdMonthlyValues[row.id]?.[aiSummaryMonth] || 0) + (apbdInputs[row.id]?.[aiSummaryMonth] || 0)
+              : (apbdInputs[row.id]?.[aiSummaryMonth] || 0));
+              
+        // Cumulative realization overall
+        const totalTerpakai = MONTHS_KEY.reduce((acc, m) => {
+          const val = apbdTabMode === 'integrated'
+            ? (calculatedApbdMonthlyValues[row.id]?.[m] || 0) + (apbdInputs[row.id]?.[m] || 0)
+            : (apbdInputs[row.id]?.[m] || 0);
+          return acc + val;
+        }, 0);
+
+        return {
+          id: row.id,
+          name: row.name,
+          code: row.code,
+          budget: row.budget || 0,
+          realisasiBulanIni,
+          totalTerpakai
+        };
+      });
+
+    // Map BLUD values
+    const preparedBludData = bludList
+      .filter(item => {
+        if (aiSummaryMonth === 'all') return true;
+        const monthIndex = MONTHS_KEY.indexOf(aiSummaryMonth);
+        const indonesianName = indonesianMonths[monthIndex];
+        return item.bulan === indonesianName;
+      })
+      .map(item => ({
+        kegiatan: item.kegiatan,
+        anggaran: item.anggaran || 0,
+        realisasi: item.realisasi || 0,
+        bulan: item.bulan,
+        department: item.department || ''
+      }));
+
+    try {
+      const response = await fetch("/api/generate-summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          month: aiSummaryMonth,
+          apbdData: preparedApbdData,
+          bludData: preparedBludData
+        }),
+      });
+
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => ({}));
+        throw new Error(errJson.error || `HTTP error! status: ${response.status}`);
+      }
+
+      const resData = await response.json();
+      if (resData.text) {
+        setAiSummaries(prev => ({
+          ...prev,
+          [aiSummaryMonth]: resData.text
+        }));
+        triggerToast('Analisis Eksekutif AI sukses diformulasikan!', 'success');
+        addActivity(`Membuat Laporan AI otomatis untuk bulan ${aiSummaryMonth === 'all' ? 'Tahunan' : aiSummaryMonth.toUpperCase()}`);
+      } else {
+        throw new Error("Laporan kosong.");
+      }
+    } catch (err: any) {
+      console.error(err);
+      setAiSummaryError(err.message || "Gagal menghubungi modul AI Server.");
+      triggerToast('Gagal merumuskan analisa AI!', 'error');
+    } finally {
+      setIsGeneratingSummary(false);
+    }
+  };
+
+  // Function to export AI Summary as PDF
+  const handleExportAiSummaryToPdf = (monthLabel: string, text: string) => {
+    if (!text) return;
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    const pageHeight = doc.internal.pageSize.height;
+    const pageWidth = doc.internal.pageSize.width;
+    const margin = 20;
+    let y = 30;
+
+    // Header styling
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(30, 41, 59);
+    doc.text("PEMERINTAH PROVINSI KALIMANTAN UTARA", pageWidth / 2, y, { align: "center" });
+    
+    y += 5;
+    doc.text("RSUD dr. H. JUSUF SK - TARAKAN", pageWidth / 2, y, { align: "center" });
+
+    y += 4;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text("JL. AKI BALAK NO. 1 TARAKAN, TELP: (0551) 21166", pageWidth / 2, y, { align: "center" });
+
+    y += 3;
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.5);
+    doc.line(margin, y, pageWidth - margin, y);
+
+    y += 10;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.setTextColor(15, 23, 42);
+    doc.text("LAPORAN RINGKASAN EKSEKUTIF BULANAN (AI)", margin, y);
+
+    y += 6;
+    doc.setFontSize(10);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Periode Laporan: ${monthLabel} 2026`, margin, y);
+
+    y += 5;
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "italic");
+    doc.text(`Dibuat secara otomatis oleh SIPANDA AI pada: ${new Date().toLocaleString('id-ID')}`, margin, y);
+
+    y += 8;
+    doc.setDrawColor(16, 185, 129); // Emerald-500
+    doc.setLineWidth(1);
+    doc.line(margin, y, margin + 40, y);
+
+    y += 10;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(30, 41, 59);
+    
+    const lines = text.split("\n");
+    lines.forEach((line) => {
+      let trimmed = line.trim();
+      if (!trimmed) {
+        y += 4;
+        return;
+      }
+
+      if (y > pageHeight - 25) {
+        doc.addPage();
+        y = 25;
+        doc.setFont("helvetica", "italic");
+        doc.setFontSize(8);
+        doc.setTextColor(148, 163, 184);
+        doc.text("Laporan Ringkasan Eksekutif AI SIPANDA - Halaman " + doc.getNumberOfPages(), pageWidth - margin - 35, pageHeight - 12);
+        
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(30, 41, 59);
+      }
+
+      if (trimmed.startsWith("#")) {
+        y += 4;
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(16, 185, 129); // Emerald color
+        const cleanText = trimmed.replace(/^[#\s]+/g, '').replace(/\*\*/g, '');
+        doc.text(cleanText, margin, y);
+        y += 6;
+        
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(30, 41, 59);
+        return;
+      }
+
+      let isBullet = false;
+      if (trimmed.startsWith("-") || trimmed.startsWith("*")) {
+        isBullet = true;
+        trimmed = "• " + trimmed.replace(/^[-*]\s*/, "");
+      }
+
+      const cleanLine = trimmed.replace(/\*\*/g, "");
+      const wrappedText = doc.splitTextToSize(cleanLine, pageWidth - 2 * margin - (isBullet ? 4 : 0));
+      
+      wrappedText.forEach((wrappedLine: string) => {
+        if (y > pageHeight - 25) {
+          doc.addPage();
+          y = 25;
+          doc.setFont("helvetica", "italic");
+          doc.setFontSize(8);
+          doc.setTextColor(148, 163, 184);
+          doc.text("Laporan Ringkasan Eksekutif AI SIPANDA - Halaman " + doc.getNumberOfPages(), pageWidth - margin - 35, pageHeight - 12);
+          
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(10);
+          doc.setTextColor(30, 41, 59);
+        }
+        
+        doc.text(wrappedLine, margin + (isBullet ? 4 : 0), y);
+        y += 5.5;
+      });
+    });
+
+    const totalPages = doc.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text(`Halaman ${i} dari ${totalPages}`, pageWidth - margin - 20, pageHeight - 12);
+      doc.text("SIPANDA AI RSUD dr. H. Jusuf SK - Provinsi Kalimantan Utara", margin, pageHeight - 12);
+    }
+
+    doc.save(`SIPANDA_AI_Ringkasan_Laporan_${monthLabel.replace(/\s+/g, '_')}.pdf`);
+    triggerToast('Laporan Ringkasan AI berhasil diekspor ke PDF!', 'success');
+  };
+
+  // Helper parser for markdown-like bold syntax
+  const parseBoldText = (text: string) => {
+    const parts = text.split(/\*\*([^*]+)\*\*/g);
+    if (parts.length === 1) return text;
+    
+    return parts.map((part, index) => {
+      if (index % 2 === 1) {
+        return <strong key={index} className="font-extrabold text-indigo-400 dark:text-emerald-400">{part}</strong>;
+      }
+      return part;
+    });
+  };
+
+  // Beautiful custom FormattedMarkdown renderer
+  const FormattedMarkdown = ({ content }: { content: string }) => {
+    if (!content) return null;
+    const lines = content.split('\n');
+    return (
+      <div className="space-y-4 font-sans text-sm leading-relaxed text-slate-700 dark:text-slate-300">
+        {lines.map((line, idx) => {
+          let trimmed = line.trim();
+          
+          if (trimmed.startsWith('###')) {
+            return (
+              <h4 key={idx} className="text-sm font-black tracking-tight text-emerald-500 uppercase font-sans mt-5 mb-2 flex items-center gap-2">
+                <span className="w-1.5 h-3.5 bg-emerald-500 rounded"></span>
+                {trimmed.replace(/^###\s*/, '').replace(/\*\*/g, '')}
+              </h4>
+            );
+          }
+          if (trimmed.startsWith('##') || trimmed.startsWith('**') && trimmed.endsWith('**') && trimmed.length < 50) {
+            const cleanText = trimmed.replace(/^##\s*/, '').replace(/\*\*/g, '');
+            return (
+              <h3 key={idx} className="text-base font-extrabold tracking-tight text-white uppercase mt-6 mb-3 border-b border-slate-800 pb-1.5 flex items-center gap-2">
+                <span className="w-2.5 h-4 bg-indigo-500 rounded-sm"></span>
+                {cleanText}
+              </h3>
+            );
+          }
+          if (trimmed.startsWith('#')) {
+            return (
+              <h2 key={idx} className="text-lg font-black tracking-tight text-[#cbd5e1] mt-8 mb-4 border-b border-indigo-500 pb-2 flex items-center gap-2">
+                <span className="w-2.5 h-5 bg-indigo-600 rounded-lg"></span>
+                {trimmed.replace(/^#\s*/, '').replace(/\*\*/g, '')}
+              </h2>
+            );
+          }
+
+          if (trimmed.startsWith('*') || trimmed.startsWith('-')) {
+            const text = trimmed.replace(/^[\*\-]\s*/, '');
+            return (
+              <div key={idx} className="flex items-start gap-2.5 pl-4 py-0.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-550 dark:bg-emerald-400 mt-2 shrink-0"></span>
+                <p className="font-medium text-slate-700 dark:text-slate-300">
+                  {parseBoldText(text)}
+                </p>
+              </div>
+            );
+          }
+
+          if (!trimmed) {
+            return <div key={idx} className="h-1.5" />;
+          }
+
+          return (
+            <p key={idx} className="text-slate-705 dark:text-slate-300 leading-relaxed pl-1">
+              {parseBoldText(trimmed)}
+            </p>
+          );
+        })}
+      </div>
+    );
+  };
 
   // Trigger Toast Notification
   const triggerToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
@@ -2284,7 +2606,15 @@ export default function App() {
       blud: bludList,
       apbdInputs: apbdInputs,
       googleConfig: googleConfig,
-      activities: activities
+      activities: activities,
+      rekapKontribusi: rekapKontribusi,
+      rekapPerjalanan: rekapPerjalanan,
+      rekapMakanMinum: rekapMakanMinum,
+      rekapHonorarium: rekapHonorarium,
+      apbdRekapKontribusi: apbdRekapKontribusi,
+      apbdRekapPerjalanan: apbdRekapPerjalanan,
+      apbdRekapMakanMinum: apbdRekapMakanMinum,
+      apbdRekapHonorarium: apbdRekapHonorarium
     };
 
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -2316,6 +2646,15 @@ export default function App() {
           if (payload.apbdInputs) setApbdInputs(payload.apbdInputs);
           if (payload.googleConfig) setGoogleConfig(payload.googleConfig);
           if (Array.isArray(payload.activities)) setActivities(payload.activities);
+          
+          if (payload.rekapKontribusi) setRekapKontribusi(payload.rekapKontribusi);
+          if (payload.rekapPerjalanan) setRekapPerjalanan(payload.rekapPerjalanan);
+          if (payload.rekapMakanMinum) setRekapMakanMinum(payload.rekapMakanMinum);
+          if (payload.rekapHonorarium) setRekapHonorarium(payload.rekapHonorarium);
+          if (payload.apbdRekapKontribusi) setApbdRekapKontribusi(payload.apbdRekapKontribusi);
+          if (payload.apbdRekapPerjalanan) setApbdRekapPerjalanan(payload.apbdRekapPerjalanan);
+          if (payload.apbdRekapMakanMinum) setApbdRekapMakanMinum(payload.apbdRekapMakanMinum);
+          if (payload.apbdRekapHonorarium) setApbdRekapHonorarium(payload.apbdRekapHonorarium);
 
           triggerToast('Sistem berhasil dipulihkan dari Backup!', 'success');
           addActivity(`Sistem berhasil direstore via file Backup: ${file.name}`);
@@ -4159,7 +4498,7 @@ export default function App() {
               </div>
 
               {/* Directory Sub-Folder Explorer Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 no-print">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 no-print">
                 {/* 1. BLUD Folder Card */}
                 <div 
                   id="folder-anggaran-blud"
@@ -4430,6 +4769,63 @@ export default function App() {
                         <span>Pagu: <strong className={`${theme === 'light' ? 'text-purple-600' : 'text-purple-400'} font-black font-sans`}>Rp {formatIDR(PaguTotalAPBD)}</strong></span>
                         <span>•</span>
                         <span>Terpakai: <strong className={`${theme === 'light' ? 'text-purple-650' : 'text-purple-405'} font-sans`}>Rp {formatIDR(totalAPBDRealisasi)}</strong></span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. AI Summary Folder Card */}
+                <div 
+                  id="folder-anggaran-ai"
+                  onClick={() => {
+                    setActiveAnggaranTab('ai_summary');
+                    triggerToast('Membuka Sub Folder: Ringkasan Laporan AI', 'info');
+                  }}
+                  className={`p-6 rounded-3xl border cursor-pointer select-none transition-all duration-300 relative group overflow-hidden active:scale-[1.02]
+                    ${activeAnggaranTab === 'ai_summary' 
+                      ? (theme === 'light'
+                        ? 'bg-gradient-to-br from-emerald-50 to-white border-emerald-500 ring-2 ring-emerald-500/30 shadow-xl shadow-emerald-100'
+                        : 'bg-gradient-to-br from-emerald-950/40 to-slate-950 border-emerald-500/50 ring-2 ring-emerald-500/20 shadow-2xl shadow-emerald-950/20'
+                      )
+                      : (theme === 'light'
+                        ? 'bg-slate-50 border-slate-200 hover:border-slate-300 hover:bg-slate-100/80 shadow-sm'
+                        : 'bg-slate-950/30 border-slate-800 hover:border-slate-700 hover:bg-slate-950/60'
+                      )
+                    }
+                  `}
+                >
+                  {/* Decorative background glow for active folder */}
+                  {activeAnggaranTab === 'ai_summary' && (
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none"></div>
+                  )}
+                  
+                  <div className="flex items-start gap-4">
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 transition-all duration-300
+                      ${activeAnggaranTab === 'ai_summary' 
+                        ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' 
+                        : (theme === 'light'
+                          ? 'bg-slate-200 text-slate-500 group-hover:bg-slate-300 group-hover:text-slate-700'
+                          : 'bg-slate-900 text-slate-500 group-hover:bg-slate-800 group-hover:text-slate-300'
+                        )
+                      }
+                    `}>
+                      <Bot className={`w-8 h-8 ${activeAnggaranTab === 'ai_summary' ? 'animate-bounce' : ''}`} />
+                    </div>
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-[10px] font-black uppercase tracking-widest font-mono ${theme === 'light' ? 'text-emerald-600' : 'text-emerald-400'}`}>Folders / Sub Folder #3</span>
+                        {activeAnggaranTab === 'ai_summary' && (
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        )}
+                      </div>
+                      <h3 className={`text-base font-black truncate ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>Ringkasan Laporan AI</h3>
+                      <p className={`text-xs mt-1 font-semibold leading-relaxed ${theme === 'light' ? 'text-slate-600' : 'text-slate-400'}`}>
+                        Laporan otomatis & analisis strategis berbasis kecerdasan buatan (Gemini AI).
+                      </p>
+                      
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-4 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">
+                        <span className={`${theme === 'light' ? 'text-emerald-600' : 'text-emerald-400'} font-black`}>ASISTEN INTERNAL RSUD JU-JUSUF</span>
                       </div>
                     </div>
                   </div>
@@ -7332,6 +7728,283 @@ export default function App() {
                 </div>
               )}
 
+              {/* TAB-3 PANEL: AI SUMMARY (RINGKASAN LAPORAN OTOMATIS) */}
+              {activeAnggaranTab === 'ai_summary' && (
+                <div id="tab-ai-summary" className="space-y-8 animate-fadeIn">
+                  
+                  {/* Top Header Card */}
+                  <div className={`p-8 rounded-[2.5rem] border shadow-2xl transition-all duration-500 relative overflow-hidden
+                    ${theme === 'light'
+                      ? 'bg-gradient-to-br from-indigo-50 via-teal-50/20 to-white border-slate-200'
+                      : 'bg-gradient-to-br from-[#0f172a] via-[#022c22]/10 to-slate-950 border-slate-800'
+                    }
+                  `}>
+                    <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+                    <div className="absolute -bottom-10 -left-10 w-60 h-60 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+                      <div className="flex items-start gap-4">
+                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-indigo-600 flex items-center justify-center text-white shadow-xl shadow-emerald-500/20 shrink-0">
+                          <Bot className="w-8 h-8 animate-pulse" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className={`text-lg font-black tracking-tight ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>Asisten Analisis Anggaran Otomatis (AI)</h3>
+                            <span className="bg-emerald-500/10 text-emerald-400 font-mono text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider border border-emerald-500/25">Gemini 3.5 Active</span>
+                          </div>
+                          <p className={`text-xs mt-1 font-semibold leading-relaxed ${theme === 'light' ? 'text-slate-600' : 'text-slate-400'}`}>
+                            SIPANDA AI memformulasikan data DPA APBD & realisasi SPJ Jasa Layanan BLUD bulan demi bulan menjadi ringkasan eksekutif dan rekomendasi strategis secara instan.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Summary generation trigger stats */}
+                      <div className="flex items-center gap-4 bg-slate-900/50 border border-slate-800 p-4 rounded-2xl shrink-0">
+                        <div className="text-center px-4 border-r border-slate-800">
+                          <span className="block text-[8px] font-black text-slate-500 uppercase tracking-widest font-mono">Total APBD</span>
+                          <span className="text-sm font-black text-white">{flatBudgetRows.filter(row => !row.isCat).length} Pos</span>
+                        </div>
+                        <div className="text-center px-2">
+                          <span className="block text-[8px] font-black text-slate-500 uppercase tracking-widest font-mono">Total BLUD</span>
+                          <span className="text-sm font-black text-white">{bludList.length} Transaksi</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Month Selection Grid */}
+                  <div className={`p-6 rounded-3xl border shadow-xl transition-all duration-300
+                    ${theme === 'light' ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-800'}
+                  `}>
+                    <h4 className={`text-xs font-black uppercase tracking-widest ${theme === 'light' ? 'text-indigo-650' : 'text-[#818cf8]'} mb-4 flex items-center gap-2`}>
+                      <Calendar className="w-4 h-4" />
+                      <span>Langkah 1: Pilih Periode Laporan Keuangan</span>
+                    </h4>
+
+                    {/* Horizontal choice list using beautiful grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3 mb-2">
+                      {[
+                        { key: 'all', label: 'Tahun 2026' },
+                        { key: 'jan', label: 'Januari' },
+                        { key: 'feb', label: 'Februari' },
+                        { key: 'mar', label: 'Maret' },
+                        { key: 'apr', label: 'April' },
+                        { key: 'mei', label: 'Mei' },
+                        { key: 'jun', label: 'Juni' },
+                        { key: 'jul', label: 'Juli' },
+                        { key: 'agu', label: 'Agustus' },
+                        { key: 'sep', label: 'September' },
+                        { key: 'okt', label: 'Oktober' },
+                        { key: 'nov', label: 'November' },
+                        { key: 'des', label: 'Desember' }
+                      ].map((item) => {
+                        const isSelected = aiSummaryMonth === item.key;
+                        const hasCachedReport = !!aiSummaries[item.key];
+                        return (
+                          <button
+                            key={item.key}
+                            type="button"
+                            onClick={() => {
+                              setAiSummaryMonth(item.key);
+                              setAiSummaryError(null);
+                            }}
+                            className={`px-3 py-3 rounded-xl text-xs font-bold transition-all border shrink-0 text-center relative flex flex-col items-center justify-center gap-1 cursor-pointer select-none active:scale-95
+                              ${isSelected
+                                ? (theme === 'light'
+                                  ? 'bg-gradient-to-r from-emerald-500 to-indigo-600 text-white border-indigo-500 ring-2 ring-indigo-500/20 font-extrabold shadow-lg shadow-indigo-150'
+                                  : 'bg-gradient-to-r from-emerald-600 to-indigo-600 text-white border-indigo-500 ring-2 ring-indigo-500/30 font-extrabold shadow-2xl shadow-indigo-950/25'
+                                )
+                                : (theme === 'light'
+                                  ? 'bg-slate-50 hover:bg-slate-105 border-slate-205 text-slate-800'
+                                  : 'bg-[#0f172a] hover:bg-slate-900 border-slate-850 text-slate-400 hover:text-white'
+                                )
+                              }
+                            `}
+                          >
+                            <span>{item.label}</span>
+                            {hasCachedReport && (
+                              <span className={`w-1.5 h-1.5 rounded-full absolute top-2 right-2 animate-pulse
+                                ${isSelected ? 'bg-white' : 'bg-emerald-500'}
+                              `} title="Laporan tersimpan di cache!" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Analysis Trigger Zone */}
+                  <div className="flex flex-col items-center text-center p-8 bg-slate-950/20 border border-slate-850 rounded-[2.5rem] no-print">
+                    <div className="relative mb-6">
+                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 rounded-full bg-emerald-500/5 animate-ping"></div>
+                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full bg-indigo-500/10 animate-pulse"></div>
+                      <div className="w-16 h-16 bg-gradient-to-tr from-emerald-500 to-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-xl relative z-10 shadow-indigo-500/10">
+                        <Sparkles className={`w-8 h-8 ${isGeneratingSummary ? 'animate-spin' : ''}`} />
+                      </div>
+                    </div>
+
+                    <div className="max-w-md mx-auto space-y-2 mb-6">
+                      <h4 className="text-white text-base font-black">
+                        {isGeneratingSummary ? 'SIPANDA AI Sedang Menganalisis Data...' : 'Siap Menulis Laporan Eksekutif Bulanan?'}
+                      </h4>
+                      <p className="text-slate-400 text-xs font-semibold leading-relaxed">
+                        {isGeneratingSummary 
+                          ? 'Algoritma Gemini AI sedang membaca post-post APBD Provinsi Kaltara, draf anggaran, serta mengorelasikannya dengan realisasi Jasa Layanan BLUD...'
+                          : 'Asisten AI akan menilai penyerapan APBD & BLUD, mengidentifikasi sektor anggaran terbesar, menilai sisa dana, dan merumuskan usulan taktis strategis bagi Direksi.'
+                        }
+                      </p>
+
+                      {isGeneratingSummary && (
+                        <div className="p-3 bg-emerald-950/10 border border-emerald-900/15 rounded-xl mt-3 animate-pulse">
+                          <span className="text-[10px] font-extrabold text-emerald-400 uppercase tracking-widest font-mono">Proses Analisis Aktif</span>
+                          <p className="text-[11px] text-emerald-400 italic mt-1 font-bold">Membaca data keuangan riil dan menyusun rekomendasi audit keuangan...</p>
+                        </div>
+                      )}
+
+                      {aiSummaryError && (
+                        <div className="p-4 bg-rose-950/20 border border-rose-900/30 text-[#f43f5e] text-xs rounded-2xl font-bold leading-relaxed">
+                          ⚠️ Kesalahan: {aiSummaryError}
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={isGeneratingSummary}
+                      onClick={handleGenerateAiSummary}
+                      className={`px-10 py-4 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all inline-flex items-center gap-3 shadow-lg select-none cursor-pointer
+                        ${isGeneratingSummary
+                          ? 'bg-slate-900 border border-slate-800 text-slate-500 shadow-none cursor-not-allowed'
+                          : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/10 hover:scale-105 active:scale-95'
+                        }
+                      `}
+                    >
+                      {isGeneratingSummary ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
+                          <span>Menganalisis Anggaran & SPJ...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Brain className="w-4 h-4 animate-pulse" />
+                          <span>{aiSummaries[aiSummaryMonth] ? 'Perbarui Laporan Analisis AI' : 'Formulasikan Ringkasan Laporan AI'}</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Generated Summary Report Output Document */}
+                  {aiSummaries[aiSummaryMonth] && (
+                    <div id="ai-printed-report" className="animate-fadeIn space-y-6">
+                      
+                      {/* Document Sheet Visual Card */}
+                      <div className={`p-8 sm:p-12 rounded-[2.5rem] border shadow-2xl transition-all duration-305 relative
+                        ${theme === 'light'
+                          ? 'bg-white border-slate-200 shadow-slate-100'
+                          : 'bg-slate-950 border-slate-800/80 shadow-[#000]/50'
+                        }
+                      `}>
+                        {/* Medical Government official Header */}
+                        <div className="flex flex-col items-center text-center pb-6 border-b border-slate-800/80 mb-8 space-y-2">
+                          <span className="text-[9px] font-black tracking-widest text-[#10b981] font-mono uppercase">Dokumen Resmi SIPANDA AI Intelligence</span>
+                          <h3 className={`text-sm font-black ${theme === 'light' ? 'text-slate-800' : 'text-slate-100'} tracking-wide uppercase font-sans`}>
+                            PEMERINTAH PROVINSI KALIMANTAN UTARA
+                          </h3>
+                          <h4 className={`text-base font-black ${theme === 'light' ? 'text-slate-900' : 'text-white'} tracking-tight uppercase font-sans`}>
+                            RSUD dr. H. JUSUF SK - TARAKAN
+                          </h4>
+                          <p className="text-[10px] text-slate-500 font-semibold font-mono">
+                            JL. AKI BALAK NO. 1 TARAKAN | SUB BAGIAN PROGRAM & ANGGARAN
+                          </p>
+                          <div className="w-16 h-1 bg-gradient-to-r from-emerald-500 to-indigo-600 rounded-full mt-4"></div>
+                        </div>
+
+                        {/* Title Bar */}
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8 bg-slate-900/30 p-5 rounded-2xl border border-slate-850">
+                          <div>
+                            <span className="text-[9px] font-mono font-black text-slate-500 uppercase tracking-widest block">Judul Analisis</span>
+                            <span className={`text-sm font-black ${theme === 'light' ? 'text-slate-800' : 'text-white'}`}>
+                              Ringkasan Eksekutif Analisis Penyerapan Belanja Daerah & Jasa Layanan
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-mono font-black text-slate-500 uppercase tracking-widest block">Periode Laporan</span>
+                            <span className="bg-emerald-500/10 text-emerald-400 text-xs font-black px-3 py-1 rounded-lg border border-emerald-500/20 inline-block mt-1 uppercase font-mono">
+                              {aiSummaryMonth === 'all' ? 'Tahun 2026 (Akumulatif)' : aiSummaryMonth.toUpperCase() + ' 2026'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Content Area */}
+                        <div className="prose prose-invert max-w-none text-slate-300">
+                          <FormattedMarkdown content={aiSummaries[aiSummaryMonth]} />
+                        </div>
+
+                        {/* Document Footer Signature Simulation */}
+                        <div className="mt-14 pt-8 border-t border-slate-800/80 flex justify-end">
+                          <div className="text-center w-60 font-sans">
+                            <span className="text-[10px] uppercase font-bold text-slate-500 block">Tanda Tangan Elektronik</span>
+                            <span className="text-xs font-black text-emerald-400 block mt-1">SIPANDA SYSTEM AI ANALYST</span>
+                            <span className="text-[9px] font-mono font-semibold text-slate-600 block mt-1">ID: RS-KALTARA-SIPANDA-AI</span>
+                            
+                            <div className="mt-6 inline-flex p-1.5 bg-emerald-500/5 rounded-xl border border-emerald-500/10 animate-pulse">
+                              <span className="text-[8px] font-mono font-black text-emerald-400 uppercase tracking-widest">Kombinasi Algoritma Tepercaya</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Export Options Bar */}
+                      <div className="flex flex-wrap sm:flex-nowrap gap-4 justify-end no-print">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(aiSummaries[aiSummaryMonth]);
+                            triggerToast('Ringkasan Laporan AI disalin ke papan klip!', 'success');
+                          }}
+                          className={`px-6 py-3.5 rounded-xl text-xs font-extrabold transition-all duration-300 flex items-center gap-2 cursor-pointer
+                            ${theme === 'light'
+                              ? 'bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-350'
+                              : 'bg-slate-900 hover:bg-[#1e293b] text-slate-300 border border-slate-800'
+                            }
+                          `}
+                        >
+                          <Copy className="w-4 h-4" />
+                          <span>Salin Ringkasan</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const monthLabels: Record<string, string> = {
+                              all: "Setahun Penuh (Akumulatif)",
+                              jan: "Januari",
+                              feb: "Februari",
+                              mar: "Maret",
+                              apr: "April",
+                              mei: "Mei",
+                              jun: "Juni",
+                              jul: "Juli",
+                              agu: "Agustus",
+                              sep: "September",
+                              okt: "Oktober",
+                              nov: "November",
+                              des: "Desember"
+                            };
+                            const l = monthLabels[aiSummaryMonth] || "Laporan";
+                            handleExportAiSummaryToPdf(l, aiSummaries[aiSummaryMonth]);
+                          }}
+                          className="px-6 py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-500/50 rounded-xl text-xs font-extrabold transition-all duration-300 flex items-center gap-2 cursor-pointer shadow-lg shadow-indigo-950/20"
+                        >
+                          <Printer className="w-4 h-4" />
+                          <span>Ekspor Laporan PDF</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
             </motion.div>
           )}
 
@@ -7658,6 +8331,64 @@ export default function App() {
                 >
                   Hubungkan Google Sheets
                 </button>
+              </div>
+
+              {/* Backup & Restore Keseluruhan Data */}
+              <div id="settings-backup-restore-card" className="bg-slate-950 rounded-[2.5rem] border border-slate-800 p-8 shadow-xl space-y-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center text-indigo-400">
+                    <Database className="w-6 h-6 animate-pulse" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-white">Cadangan & Pemulihan Sistem (Backup & Restore)</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">Ekspor semua data di sistem SIPANDA Anda ke satu file cadangan, atau pulihkan dari file cadangan sebelumnya.</p>
+                  </div>
+                </div>
+
+                <div className="p-5 rounded-2xl bg-indigo-500/5 border border-indigo-500/10 text-xs text-slate-300 leading-relaxed font-semibold space-y-2">
+                  <p>Fitur ini mencakup pencadangan dan pemulihan data secara dinamis dari seluruh sistem, di antaranya:</p>
+                  <ul className="list-disc list-inside space-y-1 ml-1 text-slate-400 font-medium">
+                    <li>Daftar Telaah Staf, Sertifikat, dan Perjalanan Dinas (Laporan Kegiatan)</li>
+                    <li>Rincian Anggaran Daerah (APBD) beserta input bulanan</li>
+                    <li>Rincian Anggaran BLUD & Rencana Kegiatan Operasional bulanan</li>
+                    <li>Tabel detail analisis rekap Kontribusi, Perjalanan Dinas, Makan Minum, & Honorarium (BLUD & APBD)</li>
+                    <li>Sesi konfigurasi ID Google Drive & Google Sheets target</li>
+                  </ul>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-4 pt-2">
+                  <button 
+                    type="button"
+                    onClick={handleExportBackupAndDownload}
+                    className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs px-6 py-3.5 rounded-xl transition-all shadow-lg shadow-emerald-900/10 flex items-center justify-center gap-2 uppercase tracking-wider cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Download Backup (.json)</span>
+                  </button>
+
+                  <button 
+                    type="button"
+                    onClick={() => settingsFileInputRestoreRef.current?.click()}
+                    className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs px-6 py-3.5 rounded-xl transition-all shadow-lg shadow-indigo-950/20 flex items-center justify-center gap-2 uppercase tracking-wider cursor-pointer"
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span>Restore Dari Backup (.json)</span>
+                  </button>
+
+                  <input 
+                    ref={settingsFileInputRestoreRef}
+                    type="file" 
+                    accept=".json"
+                    className="hidden" 
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        processApbdBackupFile(file);
+                      }
+                      e.target.value = '';
+                    }}
+                  />
+                </div>
               </div>
 
               {/* Reset All App Data */}
